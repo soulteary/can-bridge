@@ -20,7 +20,40 @@ Currently supports three usage methods: bare-metal installation, Docker containe
 
 ### Bare-metal Installation
 
-TBD
+You can install and run CAN-Bridge as a systemd service using the provided installation script.
+
+#### Quick Install (Recommended)
+
+```bash
+curl -sSL https://raw.githubusercontent.com/linker-bot/can-bridge/main/install_with_systemd.sh | sudo bash
+```
+
+Or, if you have already cloned the repository:
+
+```bash
+cd can-bridge
+chmod +x install_with_systemd.sh
+./install_with_systemd.sh
+```
+
+This script will:
+- Download the latest release binary from GitHub
+- Install it to `/usr/local/bin/can-bridge`
+- Set up a systemd service at `/etc/systemd/system/can-bridge.service`
+- Start and enable the service
+
+You can edit `/etc/systemd/system/can-bridge.service` to customize `CAN_PORTS` or `SERVER_PORT` as needed, then reload and restart:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart can-bridge.service
+```
+
+Check status:
+
+```bash
+sudo systemctl status can-bridge.service
+```
 
 ### Docker Container Usage
 
@@ -34,7 +67,7 @@ docker run -d --rm \
   -e CAN_PORTS="can0,can1" \
   -e SERVER_PORT="5260" \
   --name can-bridge-service \
-  ghcr.io/eliyip/can-bridge:latest
+  eliyip/can-bridge:latest
 ```
 
 #### Method 2: Building It Yourself
@@ -51,7 +84,7 @@ docker run -d --rm \
   -e CAN_PORTS="can0,can1" \
   -e SERVER_PORT="5260" \
   --name can-bridge-service \
-  ghcr.io/eliyip/can-bridge:latest
+  eliyip/can-bridge:latest
 ```
 
 ### Building from Source
@@ -67,7 +100,7 @@ System requirements:
 1. Clone the project
 
 ```bash
-git clone https://github.com/your-repo/can-bridge.git
+git clone https://github.com/linker-bot/can-bridge.git
 cd can-bridge
 ```
 

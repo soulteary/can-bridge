@@ -20,7 +20,40 @@
 
 ### 裸金属安装
 
-TBD
+推荐使用项目自带的一键安装脚本，将 CAN-Bridge 作为 systemd 服务运行。
+
+#### 快速安装（推荐）
+
+```bash
+curl -sSL https://raw.githubusercontent.com/linker-bot/can-bridge/main/install_with_systemd.sh | sudo bash
+```
+
+或已克隆仓库时：
+
+```bash
+cd can-bridge
+chmod +x install_with_systemd.sh
+./install_with_systemd.sh
+```
+
+该脚本会自动：
+- 下载最新版本的可执行文件
+- 安装到 `/usr/local/bin/can-bridge`
+- 生成 systemd 服务文件 `/etc/systemd/system/can-bridge.service`
+- 启动并设置开机自启
+
+如需自定义 `CAN_PORTS` 或 `SERVER_PORT`，可编辑 `/etc/systemd/system/can-bridge.service`，修改后执行：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart can-bridge.service
+```
+
+查看服务状态：
+
+```bash
+sudo systemctl status can-bridge.service
+```
 
 ### Docker 容器环境使用
 
@@ -34,7 +67,7 @@ docker run -d --rm \
   -e CAN_PORTS="can0,can1" \
   -e SERVER_PORT="5260" \
   --name can-bridge-service \
-  ghcr.io/eliyip/can-bridge:latest
+  eliyip/can-bridge:latest
 ```
 
 #### 方法二：自行构建
@@ -51,7 +84,7 @@ docker run -d --rm \
   -e CAN_PORTS="can0,can1" \
   -e SERVER_PORT="5260" \
   --name can-bridge-service \
-  ghcr.io/eliyip/can-bridge:latest
+  eliyip/can-bridge:latest
 ```
 
 ### 从源码构建
@@ -67,7 +100,7 @@ docker run -d --rm \
 1. 克隆项目
 
 ```bash
-git clone https://github.com/your-repo/can-bridge.git
+git clone https://github.com/linker-bot/can-bridge.git
 cd can-bridge
 ```
 
