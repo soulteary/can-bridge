@@ -67,7 +67,7 @@ docker run -d --rm \
   -e CAN_PORTS="can0,can1" \
   -e SERVER_PORT="5260" \
   --name can-bridge-service \
-  eliyip/can-bridge:latest
+  ghcr.io/linker-bot/can-bridge:latest
 ```
 
 #### 方法二：自行构建
@@ -84,7 +84,7 @@ docker run -d --rm \
   -e CAN_PORTS="can0,can1" \
   -e SERVER_PORT="5260" \
   --name can-bridge-service \
-  eliyip/can-bridge:latest
+  ghcr.io/linker-bot/can-bridge:latest
 ```
 
 ### 从源码构建

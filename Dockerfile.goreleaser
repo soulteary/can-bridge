@@ -1,6 +1,6 @@
 FROM alpine:3.21
 
-COPY --link can-bridge_linux_amd64 /usr/local/bin/can-bridge
+COPY --link can-bridge /usr/local/bin/can-bridge
 
 EXPOSE 5260
 
