@@ -22,9 +22,37 @@ Currently supports three usage methods: bare-metal installation, Docker containe
 
 TBD
 
-### Docker Container Environment
+### Docker Container Usage
 
-TBD
+#### Method 1: Using a Pre-built Docker Image
+
+```bash
+docker run -d --rm \
+  --device=/dev/can0:/dev/can0 \
+  --device=/dev/can1:/dev/can1 \
+  -p 5260:5260 \
+  -e CAN_PORTS="can0,can1" \
+  -e SERVER_PORT="5260" \
+  --name can-bridge-service \
+  ghcr.io/eliyip/can-bridge:latest
+```
+
+#### Method 2: Building It Yourself
+
+```bash
+docker build --platform linux/amd64 -t can-bridge:latest .
+```
+
+```bash
+docker run -d --rm \
+  --device=/dev/can0:/dev/can0 \
+  --device=/dev/can1:/dev/can1 \
+  -p 5260:5260 \
+  -e CAN_PORTS="can0,can1" \
+  -e SERVER_PORT="5260" \
+  --name can-bridge-service \
+  ghcr.io/eliyip/can-bridge:latest
+```
 
 ### Building from Source
 

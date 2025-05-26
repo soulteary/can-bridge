@@ -16,15 +16,43 @@
 
 ## 安装与使用
 
-目前支持三种方式使用：裸金属安装、Docker容器环境使用，从源码构建。
+目前支持三种方式使用：裸金属安装、Docker 容器环境使用，从源码构建。
 
 ### 裸金属安装
 
 TBD
 
-### Docker 容器环境适应
+### Docker 容器环境使用
 
-TBD
+#### 方法一：使用构建好的 Docker 镜像
+
+```bash
+docker run -d --rm \
+  --device=/dev/can0:/dev/can0 \
+  --device=/dev/can1:/dev/can1 \
+  -p 5260:5260 \
+  -e CAN_PORTS="can0,can1" \
+  -e SERVER_PORT="5260" \
+  --name can-bridge-service \
+  ghcr.io/eliyip/can-bridge:latest
+```
+
+#### 方法二：自行构建
+
+```bash
+docker build --platform linux/amd64 -t can-bridge:latest .
+```
+
+```bash
+docker run -d --rm \
+  --device=/dev/can0:/dev/can0 \
+  --device=/dev/can1:/dev/can1 \
+  -p 5260:5260 \
+  -e CAN_PORTS="can0,can1" \
+  -e SERVER_PORT="5260" \
+  --name can-bridge-service \
+  ghcr.io/eliyip/can-bridge:latest
+```
 
 ### 从源码构建
 
@@ -33,7 +61,6 @@ TBD
 * Linux 操作系统
 * Golang 环境（Go 1.20 以上版本推荐）
 * CAN 设备接口（物理或虚拟）
-
 
 #### 安装与启动
 
@@ -72,7 +99,7 @@ export SERVER_PORT=5260
 
 `http://localhost:5260/api`
 
-### 发送原始CAN消息
+### 发送原始 CAN 消息
 
 * **URL**: `/can`
 * **方法**: `POST`
@@ -120,7 +147,7 @@ export SERVER_PORT=5260
 
 返回所有接口的运行状态、发送统计和错误信息。
 
-### 获取已配置的CAN接口
+### 获取已配置的 CAN 接口
 
 * **URL**: `/interfaces`
 * **方法**: `GET`
