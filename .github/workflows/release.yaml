@@ -1,9 +1,12 @@
 name: Release CAN-Bridge
 
 on:
+  workflow_dispatch:
   push:
+    branches:
+      - "main"
     tags:
-      - "v*"
+      - "v*"  
 
 permissions:
   contents: write
