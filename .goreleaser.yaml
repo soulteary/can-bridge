@@ -1,31 +1,31 @@
-version: 2
+# version: 2
 
-project_name: can-bridge
+# project_name: can-bridge
 
-builds:
-  - goos:
-      - linux
-    goarch:
-      - amd64
-    ldflags:
-      - -s -w
-    binary: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+# builds:
+#   - goos:
+#       - linux
+#     goarch:
+#       - amd64
+#     ldflags:
+#       - -s -w
+#     binary: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
 
-archives:
-  - formats: ["tar.gz"]
-    files:
-      - README.md
-      - README_zhCN.md
-      - LICENSE
+# archives:
+#   - formats: ["tar.gz"]
+#     files:
+#       - README.md
+#       - README_zhCN.md
+#       - LICENSE
 
-release:
-  draft: false
+# release:
+#   draft: false
 
-dockers:
-  - image_templates:
-      - "eliyip/can-bridge:{{ .Tag }}"
-      - "eliyip/can-bridge:latest"
-      - "eliyip/can-bridge:v{{ .Major }}"
-    dockerfile: Dockerfile.goreleaser
-    goos: linux
-    goarch: amd64
+# dockers:
+#   - image_templates:
+#       - "eliyip/can-bridge:{{ .Tag }}"
+#       - "eliyip/can-bridge:latest"
+#       - "eliyip/can-bridge:v{{ .Major }}"
+#     dockerfile: Dockerfile.goreleaser
+#     goos: linux
+#     goarch: amd64
