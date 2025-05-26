@@ -1,31 +1,106 @@
-# version: 2
+version: 2
 
-# project_name: can-bridge
+project_name: can-bridge
 
-# builds:
-#   - goos:
-#       - linux
-#     goarch:
-#       - amd64
-#     ldflags:
-#       - -s -w
-#     binary: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+before:
+  hooks:
+    - go mod tidy
 
-# archives:
-#   - formats: ["tar.gz"]
-#     files:
-#       - README.md
-#       - README_zhCN.md
-#       - LICENSE
+builds:
+  - id: can-bridge
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+      - arm
+    goarm:
+      - "6"
+      - "7"
+    ldflags:
+      - -s -w
 
-# release:
-#   draft: false
+archives:
+  - formats: ["tar.gz"]
+    files:
+      - README.md
+      - README_zhCN.md
+      - LICENSE
 
-# dockers:
-#   - image_templates:
-#       - "eliyip/can-bridge:{{ .Tag }}"
-#       - "eliyip/can-bridge:latest"
-#       - "eliyip/can-bridge:v{{ .Major }}"
-#     dockerfile: Dockerfile.goreleaser
-#     goos: linux
-#     goarch: amd64
+release:
+  draft: false
+
+dockers:
+  - image_templates:
+      - "ghcr.io/{{ .Env.GITHUB_USERNAME }}/can-bridge:{{ .Tag }}-amd64"
+    dockerfile: Dockerfile.goreleaser
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+    goos: linux
+    goarch: amd64
+
+  - image_templates:
+      - "ghcr.io/{{ .Env.GITHUB_USERNAME }}/can-bridge:{{ .Tag }}-arm64"
+    dockerfile: Dockerfile.goreleaser
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+    goos: linux
+    goarch: arm64
+
+  - image_templates:
+      - "ghcr.io/{{ .Env.GITHUB_USERNAME }}/can-bridge:{{ .Tag }}-armv6"
+    dockerfile: Dockerfile.goreleaser
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/arm/v6"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+    goos: linux
+    goarch: arm
+    goarm: "6"
+
+  - image_templates:
+      - "ghcr.io/{{ .Env.GITHUB_USERNAME }}/can-bridge:{{ .Tag }}-armv7"
+    dockerfile: Dockerfile.goreleaser
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/arm/v7"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+    goos: linux
+    goarch: arm
+    goarm: "7"
+
+docker_manifests:
+  - name_template: "ghcr.io/{{ .Env.GITHUB_USERNAME }}/can-bridge:{{ .Tag }}"
+    image_templates:
+      - "ghcr.io/{{ .Env.GITHUB_USERNAME }}/can-bridge:{{ .Tag }}-amd64"
+      - "ghcr.io/{{ .Env.GITHUB_USERNAME }}/can-bridge:{{ .Tag }}-arm64"
+      - "ghcr.io/{{ .Env.GITHUB_USERNAME }}/can-bridge:{{ .Tag }}-armv6"
+      - "ghcr.io/{{ .Env.GITHUB_USERNAME }}/can-bridge:{{ .Tag }}-armv7"
+  - name_template: "ghcr.io/{{ .Env.GITHUB_USERNAME }}/can-bridge:latest"
+    image_templates:
+      - "ghcr.io/{{ .Env.GITHUB_USERNAME }}/can-bridge:{{ .Tag }}-amd64"
+      - "ghcr.io/{{ .Env.GITHUB_USERNAME }}/can-bridge:{{ .Tag }}-arm64"
+      - "ghcr.io/{{ .Env.GITHUB_USERNAME }}/can-bridge:{{ .Tag }}-armv6"
+      - "ghcr.io/{{ .Env.GITHUB_USERNAME }}/can-bridge:{{ .Tag }}-armv7"
+  - name_template: "ghcr.io/{{ .Env.GITHUB_USERNAME }}/can-bridge:v{{ .Major }}"
+    image_templates:
+      - "ghcr.io/{{ .Env.GITHUB_USERNAME }}/can-bridge:{{ .Tag }}-amd64"
+      - "ghcr.io/{{ .Env.GITHUB_USERNAME }}/can-bridge:{{ .Tag }}-arm64"
+      - "ghcr.io/{{ .Env.GITHUB_USERNAME }}/can-bridge:{{ .Tag }}-armv6"
+      - "ghcr.io/{{ .Env.GITHUB_USERNAME }}/can-bridge:{{ .Tag }}-armv7"
