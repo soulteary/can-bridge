@@ -1,5 +1,8 @@
 # CAN-Bridge Project Documentation
 
+![](.github/logo.png)
+[中文文档](./README_zhCN.md)
+
 ## Project Overview
 
 **CAN-Bridge** is a Golang-based hardware-adapted bridge service, specifically designed to efficiently and reliably support data communication for devices using the CAN (Controller Area Network) protocol.

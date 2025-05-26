@@ -1,5 +1,8 @@
 # CAN-Bridge 项目文档
 
+![](.github/logo.png)
+[English](./README_zhCN.md)
+
 ## 项目概述
 
 **CAN-Bridge** 是一个基于 Golang 开发的硬件适配网桥服务，专门用于支持使用 CAN（Controller Area Network）协议的设备进行高效稳定的数据通信。
