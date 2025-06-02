@@ -196,6 +196,9 @@ func (s *Service) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to start watchdog: %w", err)
 	}
 
+	// Start Node Finder in a separate goroutine
+	go NodeFinder()
+
 	// Start HTTP server in a goroutine
 	go func() {
 		s.logger.Printf("🌐 Starting HTTP server on %s", s.server.Addr)
