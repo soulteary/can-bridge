@@ -44,7 +44,6 @@ func (h *APIHandler) SetupRoutes(r *gin.Engine) {
 	{
 		// Message endpoints
 		api.POST("/can", h.handleCanMessage)
-		api.POST("/palm", h.handlePalmPose)
 
 		// Status and monitoring endpoints
 		api.GET("/status", h.handleSystemStatus)
