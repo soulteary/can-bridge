@@ -150,32 +150,6 @@ export SERVER_PORT=5260
 }
 ```
 
-### Finger Pose Control (Legacy Support)
-
-* **URL**: `/fingers`
-* **Method**: `POST`
-
-**Example Request**:
-
-```json
-{
-  "pose": [10, 20, 30, 40, 50, 60]
-}
-```
-
-### Palm Pose Control (Legacy Support)
-
-* **URL**: `/palm`
-* **Method**: `POST`
-
-**Example Request**:
-
-```json
-{
-  "pose": [70, 80, 90, 100]
-}
-```
-
 ### Interface Status and Statistics
 
 * **URL**: `/status`
