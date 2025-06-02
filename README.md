@@ -1,7 +1,7 @@
 # CAN-Bridge Project Documentation
 
+[中文](README_zhCN.md)
 <img src=".github/logo.png" width=140>
-[中文](./README_zhCN.md)
 
 ## Project Overview
 
