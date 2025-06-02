@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"regexp"
@@ -63,30 +64,18 @@ func NewSystemCommandExecutor() *SystemCommandExecutor {
 // Execute executes a system command
 func (e *SystemCommandExecutor) Execute(name string, args ...string) ([]byte, error) {
 	cmd := exec.Command(name, args...)
-	return cmd.CombinedOutput()
+	output, err := cmd.CombinedOutput()
+	return output, err
 }
 
 // ExecuteWithTimeout executes a system command with timeout
 func (e *SystemCommandExecutor) ExecuteWithTimeout(timeout time.Duration, name string, args ...string) ([]byte, error) {
-	cmd := exec.Command(name, args...)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
 
-	// Set up timeout
-	done := make(chan error, 1)
-	go func() {
-		done <- cmd.Run()
-	}()
-
-	select {
-	case err := <-done:
-		if err != nil {
-			output, _ := cmd.CombinedOutput()
-			return output, err
-		}
-		return cmd.CombinedOutput()
-	case <-time.After(timeout):
-		cmd.Process.Kill()
-		return nil, fmt.Errorf("command timed out after %v", timeout)
-	}
+	cmd := exec.CommandContext(ctx, name, args...)
+	output, err := cmd.CombinedOutput()
+	return output, err
 }
 
 // InterfaceSetupManager manages CAN interface setup and configuration
@@ -114,10 +103,29 @@ func (ism *InterfaceSetupManager) SetupInterface(ifName string) error {
 		return fmt.Errorf("CAN interface %s does not exist", ifName)
 	}
 
-	// Bring interface down first (in case it's already up)
-	if err := ism.bringInterfaceDown(ifName); err != nil {
-		ism.logger.Printf("⚠️ Warning: failed to bring %s down: %v", ifName, err)
-		// Continue anyway - interface might not have been up
+	// Get current state to see if interface is already up
+	currentState, err := ism.GetInterfaceState(ifName)
+	if err != nil {
+		ism.logger.Printf("⚠️ Warning: could not get current state of %s: %v", ifName, err)
+	}
+
+	// If interface is already up and configured correctly, skip setup
+	if currentState != nil && currentState.IsUp && currentState.Bitrate == ism.config.Bitrate {
+		ism.logger.Printf("✅ Interface %s is already configured correctly (bitrate=%d)", ifName, currentState.Bitrate)
+		return nil
+	}
+
+	// Bring interface down first (only if it's up)
+	if currentState != nil && currentState.IsUp {
+		if err := ism.bringInterfaceDown(ifName); err != nil {
+			ism.logger.Printf("⚠️ Warning: failed to bring %s down: %v", ifName, err)
+			// Try to force down
+			if err := ism.forceInterfaceDown(ifName); err != nil {
+				ism.logger.Printf("⚠️ Warning: failed to force %s down: %v", ifName, err)
+			}
+		}
+		// Brief pause after bringing down
+		time.Sleep(500 * time.Millisecond)
 	}
 
 	// Configure interface parameters
@@ -167,20 +175,46 @@ func (ism *InterfaceSetupManager) SetupInterfaceWithRetry(ifName string) error {
 func (ism *InterfaceSetupManager) interfaceExists(ifName string) bool {
 	output, err := ism.commandExecutor.Execute("ip", "link", "show", ifName)
 	if err != nil {
+		ism.logger.Printf("🔍 Interface check failed for %s: %v", ifName, err)
 		return false
 	}
-	return strings.Contains(string(output), ifName)
+	exists := strings.Contains(string(output), ifName)
+	ism.logger.Printf("🔍 Interface %s exists: %t", ifName, exists)
+	return exists
 }
 
 // bringInterfaceDown brings CAN interface down
 func (ism *InterfaceSetupManager) bringInterfaceDown(ifName string) error {
+	ism.logger.Printf("🔽 Bringing %s down...", ifName)
 	timeout := time.Duration(ism.config.TimeoutSeconds) * time.Second
-	_, err := ism.commandExecutor.ExecuteWithTimeout(timeout, "ip", "link", "set", ifName, "down")
-	return err
+	output, err := ism.commandExecutor.ExecuteWithTimeout(timeout, "ip", "link", "set", ifName, "down")
+	if err != nil {
+		ism.logger.Printf("❌ Failed to bring %s down: %v, output: %s", ifName, err, string(output))
+		return err
+	}
+	ism.logger.Printf("✅ Successfully brought %s down", ifName)
+	return nil
+}
+
+// forceInterfaceDown forces interface down using different approach
+func (ism *InterfaceSetupManager) forceInterfaceDown(ifName string) error {
+	ism.logger.Printf("🔽 Force bringing %s down...", ifName)
+
+	// Try using ifconfig as alternative
+	timeout := time.Duration(ism.config.TimeoutSeconds) * time.Second
+	output, err := ism.commandExecutor.ExecuteWithTimeout(timeout, "ifconfig", ifName, "down")
+	if err != nil {
+		ism.logger.Printf("❌ Failed to force %s down with ifconfig: %v, output: %s", ifName, err, string(output))
+		return err
+	}
+	ism.logger.Printf("✅ Successfully forced %s down with ifconfig", ifName)
+	return nil
 }
 
 // configureInterface configures CAN interface parameters
 func (ism *InterfaceSetupManager) configureInterface(ifName string) error {
+	ism.logger.Printf("⚙️ Configuring %s parameters...", ifName)
+
 	args := []string{"link", "set", ifName, "type", "can"}
 
 	// Add bitrate
@@ -196,14 +230,17 @@ func (ism *InterfaceSetupManager) configureInterface(ifName string) error {
 		args = append(args, "restart-ms", strconv.Itoa(ism.config.RestartMs))
 	}
 
+	ism.logger.Printf("📝 Executing: ip %s", strings.Join(args, " "))
+
 	timeout := time.Duration(ism.config.TimeoutSeconds) * time.Second
 	output, err := ism.commandExecutor.ExecuteWithTimeout(timeout, "ip", args...)
 
 	if err != nil {
+		ism.logger.Printf("❌ Configuration failed for %s: %v, output: %s", ifName, err, string(output))
 		return fmt.Errorf("configuration failed: %v, output: %s", err, string(output))
 	}
 
-	ism.logger.Printf("🔧 Configured %s: bitrate=%d, sample-point=%s, restart-ms=%d",
+	ism.logger.Printf("✅ Successfully configured %s: bitrate=%d, sample-point=%s, restart-ms=%d",
 		ifName, ism.config.Bitrate, ism.config.SamplePoint, ism.config.RestartMs)
 
 	return nil
@@ -211,19 +248,23 @@ func (ism *InterfaceSetupManager) configureInterface(ifName string) error {
 
 // bringInterfaceUp brings CAN interface up
 func (ism *InterfaceSetupManager) bringInterfaceUp(ifName string) error {
+	ism.logger.Printf("🚀 Bringing %s up...", ifName)
 	timeout := time.Duration(ism.config.TimeoutSeconds) * time.Second
 	output, err := ism.commandExecutor.ExecuteWithTimeout(timeout, "ip", "link", "set", ifName, "up")
 
 	if err != nil {
+		ism.logger.Printf("❌ Failed to bring %s up: %v, output: %s", ifName, err, string(output))
 		return fmt.Errorf("failed to bring interface up: %v, output: %s", err, string(output))
 	}
 
-	ism.logger.Printf("🚀 Interface %s brought up successfully", ifName)
+	ism.logger.Printf("✅ Successfully brought %s up", ifName)
 	return nil
 }
 
 // verifyInterface verifies that the interface is working properly
 func (ism *InterfaceSetupManager) verifyInterface(ifName string) error {
+	ism.logger.Printf("🔍 Verifying %s configuration...", ifName)
+
 	state, err := ism.GetInterfaceState(ifName)
 	if err != nil {
 		return fmt.Errorf("failed to get interface state: %w", err)
@@ -238,9 +279,12 @@ func (ism *InterfaceSetupManager) verifyInterface(ifName string) error {
 			ism.config.Bitrate, state.Bitrate)
 	}
 
-	if strings.Contains(state.State, "ERROR") {
+	if strings.Contains(strings.ToUpper(state.State), "ERROR") && !strings.Contains(strings.ToUpper(state.State), "ERROR-ACTIVE") {
 		return fmt.Errorf("interface is in error state: %s", state.State)
 	}
+
+	ism.logger.Printf("✅ Interface %s verification passed: up=%t, bitrate=%d, state=%s",
+		ifName, state.IsUp, state.Bitrate, state.State)
 
 	return nil
 }
@@ -262,18 +306,22 @@ func (ism *InterfaceSetupManager) parseInterfaceState(ifName, output string) (*I
 	}
 
 	// Check if interface is UP
-	state.IsUp = strings.Contains(output, "state UP")
+	if strings.Contains(output, "state UP") {
+		state.IsUp = true
+	} else if strings.Contains(output, "state DOWN") {
+		state.IsUp = false
+	}
+
+	// Extract more detailed state information
+	if match := regexp.MustCompile(`state (\w+(?:-\w+)*)`).FindStringSubmatch(output); len(match) > 1 {
+		state.State = match[1]
+	}
 
 	// Extract bitrate
 	if match := regexp.MustCompile(`bitrate (\d+)`).FindStringSubmatch(output); len(match) > 1 {
 		if bitrate, err := strconv.Atoi(match[1]); err == nil {
 			state.Bitrate = bitrate
 		}
-	}
-
-	// Extract state
-	if match := regexp.MustCompile(`state (\w+(?:-\w+)*)`).FindStringSubmatch(output); len(match) > 1 {
-		state.State = match[1]
 	}
 
 	// Extract restart-ms
@@ -283,25 +331,64 @@ func (ism *InterfaceSetupManager) parseInterfaceState(ifName, output string) (*I
 		}
 	}
 
-	// Get error counters
-	ism.parseErrorCounters(state, output)
+	// Get additional CAN statistics if available
+	ism.getCanStatistics(state, ifName)
 
 	return state, nil
 }
 
-// parseErrorCounters extracts error counters from interface output
-func (ism *InterfaceSetupManager) parseErrorCounters(state *InterfaceState, output string) {
-	// This would need to parse actual CAN statistics
-	// For now, we'll use basic parsing
-	if match := regexp.MustCompile(`TX errors (\d+)`).FindStringSubmatch(output); len(match) > 1 {
+// getCanStatistics gets additional CAN statistics
+func (ism *InterfaceSetupManager) getCanStatistics(state *InterfaceState, ifName string) {
+	// Try to get CAN statistics from /proc/net/can/stats
+	output, err := ism.commandExecutor.Execute("cat", fmt.Sprintf("/proc/net/can/stats/%s", ifName))
+	if err == nil {
+		ism.parseCanStatistics(state, string(output))
+	}
+
+	// Try alternative approach with ip -s link show
+	output, err = ism.commandExecutor.Execute("ip", "-s", "link", "show", ifName)
+	if err == nil {
+		ism.parseIpStatistics(state, string(output))
+	}
+}
+
+// parseCanStatistics parses CAN-specific statistics
+func (ism *InterfaceSetupManager) parseCanStatistics(state *InterfaceState, output string) {
+	// Parse TX errors
+	if match := regexp.MustCompile(`bus_error_tx:\s*(\d+)`).FindStringSubmatch(output); len(match) > 1 {
 		if txErrors, err := strconv.Atoi(match[1]); err == nil {
 			state.TxErrors = txErrors
 		}
 	}
 
-	if match := regexp.MustCompile(`RX errors (\d+)`).FindStringSubmatch(output); len(match) > 1 {
+	// Parse RX errors
+	if match := regexp.MustCompile(`bus_error_rx:\s*(\d+)`).FindStringSubmatch(output); len(match) > 1 {
 		if rxErrors, err := strconv.Atoi(match[1]); err == nil {
 			state.RxErrors = rxErrors
+		}
+	}
+}
+
+// parseIpStatistics parses statistics from ip command output
+func (ism *InterfaceSetupManager) parseIpStatistics(state *InterfaceState, output string) {
+	// Look for error counters in ip -s output
+	lines := strings.Split(output, "\n")
+	for i, line := range lines {
+		if strings.Contains(line, "RX:") && i+1 < len(lines) {
+			// Next line should contain error stats
+			if match := regexp.MustCompile(`\d+\s+\d+\s+(\d+)`).FindStringSubmatch(lines[i+1]); len(match) > 1 {
+				if rxErrors, err := strconv.Atoi(match[1]); err == nil {
+					state.RxErrors = rxErrors
+				}
+			}
+		}
+		if strings.Contains(line, "TX:") && i+1 < len(lines) {
+			// Next line should contain error stats
+			if match := regexp.MustCompile(`\d+\s+\d+\s+(\d+)`).FindStringSubmatch(lines[i+1]); len(match) > 1 {
+				if txErrors, err := strconv.Atoi(match[1]); err == nil {
+					state.TxErrors = txErrors
+				}
+			}
 		}
 	}
 }
@@ -314,7 +401,7 @@ func (ism *InterfaceSetupManager) ResetInterface(ifName string) error {
 		return fmt.Errorf("failed to bring interface down: %w", err)
 	}
 
-	time.Sleep(100 * time.Millisecond) // Brief pause
+	time.Sleep(500 * time.Millisecond) // Brief pause
 
 	if err := ism.bringInterfaceUp(ifName); err != nil {
 		return fmt.Errorf("failed to bring interface up: %w", err)
@@ -352,6 +439,7 @@ func (ism *InterfaceSetupManager) GetAvailableInterfaces() ([]string, error) {
 		}
 	}
 
+	ism.logger.Printf("🔍 Found %d CAN interfaces: %v", len(interfaces), interfaces)
 	return interfaces, nil
 }
 
