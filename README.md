@@ -1,132 +1,86 @@
 # CAN-Bridge Project Documentation
 
-![](.github/logo.png)
-[中文文档](./README_zhCN.md)
+<img src=".github/logo.png" width=140>
+[中文](./README_zhCN.md)
 
 ## Project Overview
 
-**CAN-Bridge** is a Golang-based hardware-adapted bridge service, specifically designed to efficiently and reliably support data communication for devices using the CAN (Controller Area Network) protocol.
+**CAN-Bridge** is a hardware adaptation bridge service developed in Golang, specifically designed to support efficient and stable data communication for devices using the CAN (Controller Area Network) protocol.
 
-This project aims to provide a simple and user-friendly HTTP API that allows users to send and receive CAN messages and monitor device status through network requests, with support for dynamically configuring multiple CAN interfaces.
+The project aims to provide an easy-to-use HTTP API interface, allowing users to send and receive CAN messages, manage interface configurations, and monitor device status via network requests, while also supporting dynamic configuration of multiple CAN interfaces.
 
 ## Features
 
-* **Dynamic Interface Configuration**: Supports dynamic configuration of multiple CAN interfaces (e.g., `can0`, `can1`) through command line or environment variables.
-* **HTTP API Service**: Provides easy-to-use RESTful API endpoints.
-* **Message Sending and Validation**: Supports sending standard CAN messages with data length and interface validity validation.
-* **Health Check and Automatic Recovery**: Built-in health monitoring of interfaces and automatic restart of failed interfaces.
-* **Real-time Monitoring and Statistics**: Provides interface status, message statistics, success rates, error logs, and average latency monitoring.
+### New Features
+
+* **Interface Setup Manager**:
+
+  * Automatically executes `ip link set can0 up type can bitrate 1000000`
+  * Configurable bitrate, sample point, and restart timeout
+  * Provides retry mechanism and error handling
+  * Supports interface state querying and validation
+
+* **Enhanced Configuration System**:
+
+  * Supports configuration via command-line parameters and environment variables
+  * Provides configuration validation to ensure parameter correctness, including bitrate
+  * Includes detailed usage instructions
+
+* **Comprehensive Interface Management API**:
+
+  * Configuration management API (`GET /api/setup/config`, `PUT /api/setup/config`)
+  * Interface operation API (setup, shutdown, reset, status query)
+  * Batch operation API (setup or teardown all interfaces at once)
+
+### Main Functions
+
+* **Dynamic Interface Configuration**: Supports dynamic configuration of multiple CAN interfaces (e.g., `can0`, `can1`) via command-line or environment variables.
+* **HTTP API Service**: Provides easy-to-use RESTful API interfaces.
+* **Message Sending and Validation**: Supports sending standard CAN messages and performs validation of data length and interface availability.
+* **Health Check and Automatic Recovery**: Built-in interface health monitoring with automatic recovery of failed interfaces.
+* **Real-time Monitoring and Statistics**: Offers monitoring of interface status, message statistics, success rates, error logging, and average latency.
+
+### Program Features
+
+* ✅ Automatic Initialization: Automatically configures CAN interfaces on program startup.
+* ✅ Retry Mechanism: Automatically retries interface setup upon failure.
+* ✅ Status Monitoring: Real-time monitoring of interface status and error statistics.
+* ✅ Graceful Shutdown: Automatically shuts down interfaces upon program exit.
+* ✅ Dependency Injection: Facilitates testing and extension.
+* ✅ Error Handling: Comprehensive error handling and logging.
 
 ## Installation and Usage
 
-Currently supports three usage methods: bare-metal installation, Docker container environment, and building from source.
+Supports installation on bare-metal systems, Docker containers, and source code builds.
 
-### Bare-metal Installation
+For detailed installation instructions, see the [Installation Guide](docs/install.md).
 
-You can install and run CAN-Bridge as a systemd service using the provided installation script.
+### Usage Examples
 
-#### Quick Install (Recommended)
+**Basic Usage**
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/linker-bot/can-bridge/main/install_with_systemd.sh | sudo bash
+./can-bridge -can-ports can0,can1
 ```
 
-Or, if you have already cloned the repository:
+**Custom Bitrate**
 
 ```bash
-cd can-bridge
-chmod +x install_with_systemd.sh
-./install_with_systemd.sh
+./can-bridge -can-ports can0 -bitrate 500000
 ```
 
-This script will:
-- Download the latest release binary from GitHub
-- Install it to `/usr/local/bin/can-bridge`
-- Set up a systemd service at `/etc/systemd/system/can-bridge.service`
-- Start and enable the service
-
-You can edit `/etc/systemd/system/can-bridge.service` to customize `CAN_PORTS` or `SERVER_PORT` as needed, then reload and restart:
+**Disable Automatic Setup (Managed via API)**
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl restart can-bridge.service
+./can-bridge -auto-setup=false
 ```
 
-Check status:
+**Configure Interface via API**
 
 ```bash
-sudo systemctl status can-bridge.service
-```
-
-### Docker Container Usage
-
-#### Method 1: Using a Pre-built Docker Image
-
-```bash
-docker run -d --rm \
-  --device=/dev/can0:/dev/can0 \
-  --device=/dev/can1:/dev/can1 \
-  -p 5260:5260 \
-  -e CAN_PORTS="can0,can1" \
-  -e SERVER_PORT="5260" \
-  --name can-bridge-service \
-  ghcr.io/linker-bot/can-bridge:latest
-```
-
-#### Method 2: Building It Yourself
-
-```bash
-docker build --platform linux/amd64 -t can-bridge:latest .
-```
-
-```bash
-docker run -d --rm \
-  --device=/dev/can0:/dev/can0 \
-  --device=/dev/can1:/dev/can1 \
-  -p 5260:5260 \
-  -e CAN_PORTS="can0,can1" \
-  -e SERVER_PORT="5260" \
-  --name can-bridge-service \
-  ghcr.io/linker-bot/can-bridge:latest
-```
-
-### Building from Source
-
-System requirements:
-
-* Linux operating system
-* Golang environment (Go 1.20 or higher recommended)
-* CAN device interface (physical or virtual)
-
-#### Installation and Startup
-
-1. Clone the project
-
-```bash
-git clone https://github.com/linker-bot/can-bridge.git
-cd can-bridge
-```
-
-2. Build
-
-```bash
-go build -o can-bridge
-```
-
-3. Run
-
-Specify CAN interfaces via command line arguments:
-
-```bash
-./can-bridge -can-ports can0,can1 -port 5260
-```
-
-Or specify configuration using environment variables:
-
-```bash
-export CAN_PORTS=can0,can1
-export SERVER_PORT=5260
-./can-bridge
+curl -X POST localhost:5260/api/setup/interfaces/can0 \
+  -H "Content-Type: application/json" \
+  -d '{"bitrate": 500000, "withRetry": true}'
 ```
 
 ## API Documentation
@@ -135,51 +89,44 @@ export SERVER_PORT=5260
 
 `http://localhost:5260/api`
 
-### Sending Raw CAN Messages
+### New Interface Setup Management API
 
-* **URL**: `/can`
-* **Method**: `POST`
+**Configuration Management**:
 
-**Example Request**:
+* `GET /api/setup/config`
+* `PUT /api/setup/config`
 
-```json
-{
-  "interface": "can0",
-  "id": 256,
-  "data": [1, 2, 3, 4]
-}
-```
+**Interface Operations**:
 
-### Interface Status and Statistics
+* `GET /api/setup/available`
+* `POST /api/setup/interfaces/{name}`
+* `DELETE /api/setup/interfaces/{name}`
+* `POST /api/setup/interfaces/{name}/reset`
+* `GET /api/setup/interfaces/{name}/state`
 
-* **URL**: `/status`
-* **Method**: `GET`
+**Batch Operations**:
 
-Returns running status, message statistics, and error information for all interfaces.
-
-### Get Configured CAN Interfaces
-
-* **URL**: `/interfaces`
-* **Method**: `GET`
+* `POST /api/setup/interfaces/setup-all`
+* `POST /api/setup/interfaces/teardown-all`
 
 ## Performance Optimization and Stability
 
-* Supports message retry mechanisms to ensure reliable data transmission.
-* Uses mutex locks to ensure multi-threaded safety.
-* Real-time monitoring of interface health and automatic recovery.
+* Implements retry mechanisms for reliable message transmission.
+* Utilizes mutex locks to ensure thread safety.
+* Real-time monitoring of interface health status with automatic recovery.
 
 ## Logging and Debugging
 
-Logs use standard output with a friendly format, clearly indicating errors and operational status.
+Logs are output to the standard output stream in a friendly format, including clear error messages and runtime status information.
 
 ## Deployment Recommendations
 
-It is recommended to deploy using systemd or Docker containerization to ensure long-term stable operation.
+Deployment using systemd or Docker containers is recommended to ensure long-term stable operation.
 
-## Contribution Guidelines
+## Contribution Guide
 
-Contributions via Issues and Pull Requests are welcome to help improve and optimize the project.
+Issues and Pull Requests are welcomed to improve and optimize the project.
 
 ## License
 
-This project is licensed under the Apache-2.0 License.
+This project is licensed under the Apache-2.0 license.
