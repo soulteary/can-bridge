@@ -1,7 +1,7 @@
 # CAN-Bridge 项目文档
 
+[English](README.md)
 <img src=".github/logo.png" width=140>
-[English](./README_zhCN.md)
 
 ## 项目概述
 
