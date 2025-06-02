@@ -1,7 +1,8 @@
 # CAN-Bridge 项目文档
 
 [English](README.md)
-<img src=".github/logo.png" width=140>
+
+<p><img src=".github/logo.png" width=240></p>
 
 ## 项目概述
 
