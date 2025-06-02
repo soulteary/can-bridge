@@ -86,70 +86,6 @@ func (ms *MessageSender) sendMessage(canIf *CanInterface, msg CanMessage) error 
 	return err
 }
 
-// SendFingerPose sends finger pose (for backward compatibility)
-func (ms *MessageSender) SendFingerPose(ifName string, pose []byte) error {
-	if len(pose) != 6 {
-		return fmt.Errorf("invalid pose data length, need 6 bytes")
-	}
-
-	// Default to first configured port if not specified
-	if ifName == "" {
-		ports := ms.configProvider.GetCanPorts()
-		if len(ports) > 0 {
-			ifName = ports[0]
-		} else {
-			return fmt.Errorf("no CAN interfaces configured")
-		}
-	}
-
-	// Validate interface
-	if !ms.configProvider.ValidateInterface(ifName) {
-		return fmt.Errorf("CAN interface %s is not configured. Available interfaces: %v",
-			ifName, ms.configProvider.GetCanPorts())
-	}
-
-	// Construct CAN message
-	msg := CanMessage{
-		Interface: ifName,
-		ID:        0x28,
-		Data:      append([]byte{0x01}, pose...),
-	}
-
-	return ms.SendCanMessage(msg)
-}
-
-// SendPalmPose sends palm pose (for backward compatibility)
-func (ms *MessageSender) SendPalmPose(ifName string, pose []byte) error {
-	if len(pose) != 4 {
-		return fmt.Errorf("invalid pose data length, need 4 bytes")
-	}
-
-	// Default to first configured port if not specified
-	if ifName == "" {
-		ports := ms.configProvider.GetCanPorts()
-		if len(ports) > 0 {
-			ifName = ports[0]
-		} else {
-			return fmt.Errorf("no CAN interfaces configured")
-		}
-	}
-
-	// Validate interface
-	if !ms.configProvider.ValidateInterface(ifName) {
-		return fmt.Errorf("CAN interface %s is not configured. Available interfaces: %v",
-			ifName, ms.configProvider.GetCanPorts())
-	}
-
-	// Construct CAN message
-	msg := CanMessage{
-		Interface: ifName,
-		ID:        0x28,
-		Data:      append([]byte{0x04}, pose...),
-	}
-
-	return ms.SendCanMessage(msg)
-}
-
 // ValidateMessage validates a CAN message before sending
 func (ms *MessageSender) ValidateMessage(msg CanMessage) error {
 	if msg.Interface == "" {
@@ -169,21 +105,5 @@ func (ms *MessageSender) ValidateMessage(msg CanMessage) error {
 		return fmt.Errorf("CAN data exceeds maximum length (8 bytes)")
 	}
 
-	return nil
-}
-
-// ValidateFingerPose validates finger pose data
-func (ms *MessageSender) ValidateFingerPose(pose []byte) error {
-	if len(pose) != 6 {
-		return fmt.Errorf("finger pose must be exactly 6 bytes, got %d", len(pose))
-	}
-	return nil
-}
-
-// ValidatePalmPose validates palm pose data
-func (ms *MessageSender) ValidatePalmPose(pose []byte) error {
-	if len(pose) != 4 {
-		return fmt.Errorf("palm pose must be exactly 4 bytes, got %d", len(pose))
-	}
 	return nil
 }

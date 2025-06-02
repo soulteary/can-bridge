@@ -44,8 +44,6 @@ func (h *APIHandler) SetupRoutes(r *gin.Engine) {
 	{
 		// Message endpoints
 		api.POST("/can", h.handleCanMessage)
-		api.POST("/fingers", h.handleFingerPose)
-		api.POST("/palm", h.handlePalmPose)
 
 		// Status and monitoring endpoints
 		api.GET("/status", h.handleSystemStatus)
@@ -98,60 +96,6 @@ func (h *APIHandler) handleCanMessage(c *gin.Context) {
 	}
 
 	h.respondSuccess(c, "CAN message sent successfully", req)
-}
-
-// handleFingerPose handles finger control requests (legacy support)
-func (h *APIHandler) handleFingerPose(c *gin.Context) {
-	var req FingerPoseRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		h.respondError(c, http.StatusBadRequest, "Invalid finger pose data", err)
-		return
-	}
-
-	// Validate pose data
-	if err := h.messageSender.ValidateFingerPose(req.Pose); err != nil {
-		h.respondError(c, http.StatusBadRequest, "Finger pose validation failed", err)
-		return
-	}
-
-	// Send the finger pose
-	if err := h.messageSender.SendFingerPose(req.Interface, req.Pose); err != nil {
-		h.respondError(c, http.StatusInternalServerError, "Failed to send finger pose", err)
-		return
-	}
-
-	responseData := map[string]interface{}{
-		"interface": req.Interface,
-		"pose":      req.Pose,
-	}
-	h.respondSuccess(c, "Finger pose command sent successfully", responseData)
-}
-
-// handlePalmPose handles palm control requests (legacy support)
-func (h *APIHandler) handlePalmPose(c *gin.Context) {
-	var req PalmPoseRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		h.respondError(c, http.StatusBadRequest, "Invalid palm pose data", err)
-		return
-	}
-
-	// Validate pose data
-	if err := h.messageSender.ValidatePalmPose(req.Pose); err != nil {
-		h.respondError(c, http.StatusBadRequest, "Palm pose validation failed", err)
-		return
-	}
-
-	// Send the palm pose
-	if err := h.messageSender.SendPalmPose(req.Interface, req.Pose); err != nil {
-		h.respondError(c, http.StatusInternalServerError, "Failed to send palm pose", err)
-		return
-	}
-
-	responseData := map[string]interface{}{
-		"interface": req.Interface,
-		"pose":      req.Pose,
-	}
-	h.respondSuccess(c, "Palm pose command sent successfully", responseData)
 }
 
 // handleSystemStatus returns complete system status

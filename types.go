@@ -32,18 +32,6 @@ type CanMessage struct {
 	Length    uint8  `json:"length,omitempty"`
 }
 
-// Finger pose request for backward compatibility
-type FingerPoseRequest struct {
-	Interface string `json:"interface,omitempty"`
-	Pose      []byte `json:"pose" binding:"required,len=6"`
-}
-
-// Palm pose request for backward compatibility
-type PalmPoseRequest struct {
-	Interface string `json:"interface,omitempty"`
-	Pose      []byte `json:"pose" binding:"required,len=4"`
-}
-
 // API response structure
 type ApiResponse struct {
 	Status  string      `json:"status"`
