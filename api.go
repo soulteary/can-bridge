@@ -11,14 +11,26 @@ import (
 type APIHandler struct {
 	messageSender *MessageSender
 	monitor       *Monitor
+	setupManager  *InterfaceSetupManager
 	logger        Logger
 }
 
-// NewAPIHandler creates a new API handler
+// NewAPIHandler creates a new API handler (legacy, without setup manager)
 func NewAPIHandler(messageSender *MessageSender, monitor *Monitor, logger Logger) *APIHandler {
 	return &APIHandler{
 		messageSender: messageSender,
 		monitor:       monitor,
+		setupManager:  nil,
+		logger:        logger,
+	}
+}
+
+// NewAPIHandlerWithSetup creates a new API handler with setup manager
+func NewAPIHandlerWithSetup(messageSender *MessageSender, monitor *Monitor, setupManager *InterfaceSetupManager, logger Logger) *APIHandler {
+	return &APIHandler{
+		messageSender: messageSender,
+		monitor:       monitor,
+		setupManager:  setupManager,
 		logger:        logger,
 	}
 }
@@ -40,9 +52,23 @@ func (h *APIHandler) SetupRoutes(r *gin.Engine) {
 		api.GET("/interfaces", h.handleInterfacesList)
 		api.GET("/interfaces/:name/status", h.handleInterfaceStatus)
 		api.GET("/health", h.handleHealthSummary)
-
-		// Administrative endpoints
 		api.GET("/metrics", h.handleMetrics)
+
+		// Interface setup endpoints (new)
+		if h.setupManager != nil {
+			setup := api.Group("/setup")
+			{
+				setup.GET("/config", h.handleGetSetupConfig)
+				setup.PUT("/config", h.handleUpdateSetupConfig)
+				setup.GET("/available", h.handleGetAvailableInterfaces)
+				setup.POST("/interfaces/:name", h.handleSetupInterface)
+				setup.DELETE("/interfaces/:name", h.handleTeardownInterface)
+				setup.POST("/interfaces/:name/reset", h.handleResetInterface)
+				setup.GET("/interfaces/:name/state", h.handleGetInterfaceState)
+				setup.POST("/interfaces/setup-all", h.handleSetupAllInterfaces)
+				setup.POST("/interfaces/teardown-all", h.handleTeardownAllInterfaces)
+			}
+		}
 	}
 }
 
@@ -212,7 +238,365 @@ func (h *APIHandler) handleMetrics(c *gin.Context) {
 	h.respondSuccess(c, "", metrics)
 }
 
-// Helper methods for consistent response formatting
+// ====== Interface Setup Handlers (New) ======
+
+// handleGetSetupConfig returns current setup configuration
+func (h *APIHandler) handleGetSetupConfig(c *gin.Context) {
+	if h.setupManager == nil {
+		h.respondError(c, http.StatusServiceUnavailable, "Setup manager not available", nil)
+		return
+	}
+
+	config := h.setupManager.GetSetupConfig()
+	h.respondSuccess(c, "", config)
+}
+
+// SetupConfigRequest represents a setup configuration update request
+type SetupConfigRequest struct {
+	Bitrate        *int    `json:"bitrate,omitempty"`
+	SamplePoint    *string `json:"samplePoint,omitempty"`
+	RestartMs      *int    `json:"restartMs,omitempty"`
+	AutoRecovery   *bool   `json:"autoRecovery,omitempty"`
+	TimeoutSeconds *int    `json:"timeoutSeconds,omitempty"`
+	RetryAttempts  *int    `json:"retryAttempts,omitempty"`
+}
+
+// handleUpdateSetupConfig updates setup configuration
+func (h *APIHandler) handleUpdateSetupConfig(c *gin.Context) {
+	if h.setupManager == nil {
+		h.respondError(c, http.StatusServiceUnavailable, "Setup manager not available", nil)
+		return
+	}
+
+	var req SetupConfigRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.respondError(c, http.StatusBadRequest, "Invalid setup configuration", err)
+		return
+	}
+
+	// Get current config
+	config := h.setupManager.GetSetupConfig()
+
+	// Update fields if provided
+	if req.Bitrate != nil {
+		config.Bitrate = *req.Bitrate
+	}
+	if req.SamplePoint != nil {
+		config.SamplePoint = *req.SamplePoint
+	}
+	if req.RestartMs != nil {
+		config.RestartMs = *req.RestartMs
+	}
+	if req.AutoRecovery != nil {
+		config.AutoRecovery = *req.AutoRecovery
+	}
+	if req.TimeoutSeconds != nil {
+		config.TimeoutSeconds = *req.TimeoutSeconds
+	}
+	if req.RetryAttempts != nil {
+		config.RetryAttempts = *req.RetryAttempts
+	}
+
+	// Update configuration
+	if err := h.setupManager.UpdateSetupConfig(config); err != nil {
+		h.respondError(c, http.StatusBadRequest, "Invalid configuration", err)
+		return
+	}
+
+	h.respondSuccess(c, "Setup configuration updated successfully", config)
+}
+
+// handleGetAvailableInterfaces returns available CAN interfaces
+func (h *APIHandler) handleGetAvailableInterfaces(c *gin.Context) {
+	if h.setupManager == nil {
+		h.respondError(c, http.StatusServiceUnavailable, "Setup manager not available", nil)
+		return
+	}
+
+	interfaces, err := h.setupManager.GetAvailableInterfaces()
+	if err != nil {
+		h.respondError(c, http.StatusInternalServerError, "Failed to get available interfaces", err)
+		return
+	}
+
+	data := map[string]interface{}{
+		"interfaces": interfaces,
+		"count":      len(interfaces),
+	}
+
+	h.respondSuccess(c, "", data)
+}
+
+// SetupInterfaceRequest represents an interface setup request
+type SetupInterfaceRequest struct {
+	Bitrate     *int    `json:"bitrate,omitempty"`
+	SamplePoint *string `json:"samplePoint,omitempty"`
+	RestartMs   *int    `json:"restartMs,omitempty"`
+	WithRetry   *bool   `json:"withRetry,omitempty"`
+}
+
+// handleSetupInterface sets up a specific CAN interface
+func (h *APIHandler) handleSetupInterface(c *gin.Context) {
+	if h.setupManager == nil {
+		h.respondError(c, http.StatusServiceUnavailable, "Setup manager not available", nil)
+		return
+	}
+
+	ifName := c.Param("name")
+	if ifName == "" {
+		h.respondError(c, http.StatusBadRequest, "Interface name is required", nil)
+		return
+	}
+
+	var req SetupInterfaceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		// Allow empty body - use defaults
+		req = SetupInterfaceRequest{}
+	}
+
+	// If custom parameters provided, temporarily update config
+	originalConfig := h.setupManager.GetSetupConfig()
+	if req.Bitrate != nil || req.SamplePoint != nil || req.RestartMs != nil {
+		tempConfig := originalConfig
+		if req.Bitrate != nil {
+			tempConfig.Bitrate = *req.Bitrate
+		}
+		if req.SamplePoint != nil {
+			tempConfig.SamplePoint = *req.SamplePoint
+		}
+		if req.RestartMs != nil {
+			tempConfig.RestartMs = *req.RestartMs
+		}
+
+		// Temporarily update config
+		h.setupManager.UpdateSetupConfig(tempConfig)
+		defer h.setupManager.UpdateSetupConfig(originalConfig) // Restore original
+	}
+
+	// Setup interface
+	var err error
+	withRetry := req.WithRetry != nil && *req.WithRetry
+	if withRetry {
+		err = h.setupManager.SetupInterfaceWithRetry(ifName)
+	} else {
+		err = h.setupManager.SetupInterface(ifName)
+	}
+
+	if err != nil {
+		h.respondError(c, http.StatusInternalServerError, "Failed to setup interface", err)
+		return
+	}
+
+	// Get interface state
+	state, err := h.setupManager.GetInterfaceState(ifName)
+	if err != nil {
+		h.logger.Printf("Warning: could not get interface state after setup: %v", err)
+		state = &InterfaceState{Name: ifName}
+	}
+
+	h.respondSuccess(c, fmt.Sprintf("Interface %s setup successfully", ifName), state)
+}
+
+// handleTeardownInterface tears down a specific CAN interface
+func (h *APIHandler) handleTeardownInterface(c *gin.Context) {
+	if h.setupManager == nil {
+		h.respondError(c, http.StatusServiceUnavailable, "Setup manager not available", nil)
+		return
+	}
+
+	ifName := c.Param("name")
+	if ifName == "" {
+		h.respondError(c, http.StatusBadRequest, "Interface name is required", nil)
+		return
+	}
+
+	if err := h.setupManager.TeardownInterface(ifName); err != nil {
+		h.respondError(c, http.StatusInternalServerError, "Failed to teardown interface", err)
+		return
+	}
+
+	responseData := map[string]interface{}{
+		"interface": ifName,
+		"status":    "torn_down",
+	}
+
+	h.respondSuccess(c, fmt.Sprintf("Interface %s torn down successfully", ifName), responseData)
+}
+
+// handleResetInterface resets a specific CAN interface
+func (h *APIHandler) handleResetInterface(c *gin.Context) {
+	if h.setupManager == nil {
+		h.respondError(c, http.StatusServiceUnavailable, "Setup manager not available", nil)
+		return
+	}
+
+	ifName := c.Param("name")
+	if ifName == "" {
+		h.respondError(c, http.StatusBadRequest, "Interface name is required", nil)
+		return
+	}
+
+	if err := h.setupManager.ResetInterface(ifName); err != nil {
+		h.respondError(c, http.StatusInternalServerError, "Failed to reset interface", err)
+		return
+	}
+
+	// Get interface state after reset
+	state, err := h.setupManager.GetInterfaceState(ifName)
+	if err != nil {
+		h.logger.Printf("Warning: could not get interface state after reset: %v", err)
+		state = &InterfaceState{Name: ifName}
+	}
+
+	h.respondSuccess(c, fmt.Sprintf("Interface %s reset successfully", ifName), state)
+}
+
+// handleGetInterfaceState returns the current state of a CAN interface
+func (h *APIHandler) handleGetInterfaceState(c *gin.Context) {
+	if h.setupManager == nil {
+		h.respondError(c, http.StatusServiceUnavailable, "Setup manager not available", nil)
+		return
+	}
+
+	ifName := c.Param("name")
+	if ifName == "" {
+		h.respondError(c, http.StatusBadRequest, "Interface name is required", nil)
+		return
+	}
+
+	state, err := h.setupManager.GetInterfaceState(ifName)
+	if err != nil {
+		h.respondError(c, http.StatusNotFound, "Failed to get interface state", err)
+		return
+	}
+
+	h.respondSuccess(c, "", state)
+}
+
+// SetupAllInterfacesRequest represents a request to setup all interfaces
+type SetupAllInterfacesRequest struct {
+	Interfaces []string `json:"interfaces,omitempty"` // If empty, use configured interfaces
+	WithRetry  *bool    `json:"withRetry,omitempty"`
+	Parallel   *bool    `json:"parallel,omitempty"`
+}
+
+// handleSetupAllInterfaces sets up all or specified interfaces
+func (h *APIHandler) handleSetupAllInterfaces(c *gin.Context) {
+	if h.setupManager == nil {
+		h.respondError(c, http.StatusServiceUnavailable, "Setup manager not available", nil)
+		return
+	}
+
+	var req SetupAllInterfacesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		// Allow empty body
+		req = SetupAllInterfacesRequest{}
+	}
+
+	// Get interfaces to setup
+	var interfaces []string
+	if len(req.Interfaces) > 0 {
+		interfaces = req.Interfaces
+	} else {
+		// Use system status to get configured ports
+		status := h.monitor.GetSystemStatus()
+		interfaces = status.ConfiguredPorts
+	}
+
+	withRetry := req.WithRetry != nil && *req.WithRetry
+	results := make(map[string]interface{})
+	var setupErrors []string
+
+	for _, ifName := range interfaces {
+		var err error
+		if withRetry {
+			err = h.setupManager.SetupInterfaceWithRetry(ifName)
+		} else {
+			err = h.setupManager.SetupInterface(ifName)
+		}
+
+		if err != nil {
+			setupErrors = append(setupErrors, fmt.Sprintf("%s: %v", ifName, err))
+			results[ifName] = map[string]interface{}{
+				"success": false,
+				"error":   err.Error(),
+			}
+		} else {
+			// Get interface state
+			if state, err := h.setupManager.GetInterfaceState(ifName); err == nil {
+				results[ifName] = map[string]interface{}{
+					"success": true,
+					"state":   state,
+				}
+			} else {
+				results[ifName] = map[string]interface{}{
+					"success": true,
+					"warning": "could not get state after setup",
+				}
+			}
+		}
+	}
+
+	responseData := map[string]interface{}{
+		"results":      results,
+		"totalCount":   len(interfaces),
+		"successCount": len(interfaces) - len(setupErrors),
+		"errorCount":   len(setupErrors),
+	}
+
+	if len(setupErrors) > 0 {
+		responseData["errors"] = setupErrors
+		h.respondSuccess(c, "Partial setup completed with errors", responseData)
+	} else {
+		h.respondSuccess(c, "All interfaces setup successfully", responseData)
+	}
+}
+
+// handleTeardownAllInterfaces tears down all configured interfaces
+func (h *APIHandler) handleTeardownAllInterfaces(c *gin.Context) {
+	if h.setupManager == nil {
+		h.respondError(c, http.StatusServiceUnavailable, "Setup manager not available", nil)
+		return
+	}
+
+	// Get configured ports
+	status := h.monitor.GetSystemStatus()
+	interfaces := status.ConfiguredPorts
+
+	results := make(map[string]interface{})
+	var teardownErrors []string
+
+	for _, ifName := range interfaces {
+		if err := h.setupManager.TeardownInterface(ifName); err != nil {
+			teardownErrors = append(teardownErrors, fmt.Sprintf("%s: %v", ifName, err))
+			results[ifName] = map[string]interface{}{
+				"success": false,
+				"error":   err.Error(),
+			}
+		} else {
+			results[ifName] = map[string]interface{}{
+				"success": true,
+				"status":  "torn_down",
+			}
+		}
+	}
+
+	responseData := map[string]interface{}{
+		"results":      results,
+		"totalCount":   len(interfaces),
+		"successCount": len(interfaces) - len(teardownErrors),
+		"errorCount":   len(teardownErrors),
+	}
+
+	if len(teardownErrors) > 0 {
+		responseData["errors"] = teardownErrors
+		h.respondSuccess(c, "Partial teardown completed with errors", responseData)
+	} else {
+		h.respondSuccess(c, "All interfaces torn down successfully", responseData)
+	}
+}
+
+// ====== Helper methods for consistent response formatting ======
 
 // respondSuccess sends a successful JSON response
 func (h *APIHandler) respondSuccess(c *gin.Context, message string, data interface{}) {
@@ -251,7 +635,7 @@ func parseSuccessRate(rateStr string) float64 {
 	return 0.0
 }
 
-// Middleware functions
+// ====== Middleware functions ======
 
 // LoggingMiddleware provides request logging
 func LoggingMiddleware(logger Logger) gin.HandlerFunc {
