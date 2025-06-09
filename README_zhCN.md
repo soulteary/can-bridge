@@ -1,18 +1,17 @@
 # CAN-Bridge 项目文档
+![# CAN Bridge](assets/banner.png)  
 
-[English](README.md)
+[English](README.md)  
 
-<p><img src=".github/logo.png" width=240></p>
-
-## 项目概述
+## 🔧项目概述
 
 **CAN-Bridge** 是一个基于 Golang 开发的硬件适配网桥服务，专门用于支持使用 CAN（Controller Area Network）协议的设备进行高效稳定的数据通信。
 
 本项目旨在提供一个简单易用的 HTTP API 接口，允许用户通过网络请求实现 CAN 消息的发送、接收、接口设置管理及设备状态监控，同时支持动态配置多个 CAN 接口。
 
-## 功能特性
+## ⚙️功能特性
 
-### 新增特性
+### ✨新增特性
 
 * **接口设置管理器 (InterfaceSetupManager)**：
 
@@ -33,7 +32,7 @@
   * 接口操作 API（设置、关闭、重置、状态查询）
   * 批量操作 API（一次性设置或关闭所有接口）
 
-### 主要功能
+### 📦主要功能
 
 * **动态接口配置**：支持命令行或环境变量动态配置多个 CAN 接口（例如 `can0`, `can1`）。
 * **HTTP API 服务**：提供易于调用的 RESTful API 接口。
@@ -41,7 +40,7 @@
 * **健康检查与自动恢复**：内置接口健康监测，自动重启失效接口。
 * **实时监控与统计**：提供接口状态、消息统计、发送成功率、错误记录和平均延迟监控。
 
-### 程序特性
+### 🛠️程序特性
 
 * ✅ 自动初始化：程序启动时自动配置 CAN 接口
 * ✅ 重试机制：设置失败时自动重试
@@ -50,13 +49,13 @@
 * ✅ 依赖注入：便于测试和扩展
 * ✅ 错误处理：完善的错误处理和日志记录
 
-## 安装与使用
+## 📦安装与使用
 
 支持裸金属安装、Docker 容器环境使用、从源码构建。
 
 具体安装方式参考[安装文档](docs/install_zhCN.md)。
 
-### 使用示例
+### 💡使用示例
 
 **基本使用**
 
@@ -84,13 +83,13 @@ curl -X POST localhost:5260/api/setup/interfaces/can0 \
   -d '{"bitrate": 500000, "withRetry": true}'
 ```
 
-## API 文档
+## 🌐API 文档
 
-### 基础路径
+### 📍基础路径
 
 `http://localhost:5260/api`
 
-### 新增接口设置管理 API
+### 🔁新增接口设置管理 API
 
 **配置管理**：
 
@@ -110,24 +109,24 @@ curl -X POST localhost:5260/api/setup/interfaces/can0 \
 * `POST /api/setup/interfaces/setup-all`
 * `POST /api/setup/interfaces/teardown-all`
 
-## 性能优化与稳定性
+## 🚀性能优化与稳定性
 
 * 支持消息发送重试机制，确保数据传输可靠性。
 * 使用互斥锁（Mutex）确保多线程安全性。
 * 实时监测接口健康状态并进行自动恢复。
 
-## 日志与调试
+## 📝日志与调试
 
 日志采用标准输出，格式友好，包含清晰的错误提示和运行状态信息。
 
-## 部署建议
+## 📦部署建议
 
 建议使用 systemd 或 Docker 容器化进行部署，确保服务长期稳定运行。
 
-## 贡献指南
+## 🤝贡献指南
 
 欢迎提交 Issue 和 Pull Request 来帮助项目完善和优化。
 
-## 许可证
+## 📄许可证
 
 本项目使用 Apache-2.0 license 许可证。
