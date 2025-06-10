@@ -1,18 +1,17 @@
 # CAN-Bridge Project Documentation
+![# CAN Bridge](assets/banner.png)  
 
-[中文](README_zhCN.md)
+[中文](README_zhCN.md)  
 
-<p><img src=".github/logo.png" width=240></p>
-
-## Project Overview
+## 🔧Project Overview
 
 **CAN-Bridge** is a hardware adaptation bridge service developed in Golang, specifically designed to support efficient and stable data communication for devices using the CAN (Controller Area Network) protocol.
 
 The project aims to provide an easy-to-use HTTP API interface, allowing users to send and receive CAN messages, manage interface configurations, and monitor device status via network requests, while also supporting dynamic configuration of multiple CAN interfaces.
 
-## Features
+## ⚙️Features
 
-### New Features
+### ✨New Features
 
 * **Interface Setup Manager**:
 
@@ -33,7 +32,7 @@ The project aims to provide an easy-to-use HTTP API interface, allowing users to
   * Interface operation API (setup, shutdown, reset, status query)
   * Batch operation API (setup or teardown all interfaces at once)
 
-### Main Functions
+### 📦Main Functions
 
 * **Dynamic Interface Configuration**: Supports dynamic configuration of multiple CAN interfaces (e.g., `can0`, `can1`) via command-line or environment variables.
 * **HTTP API Service**: Provides easy-to-use RESTful API interfaces.
@@ -41,7 +40,7 @@ The project aims to provide an easy-to-use HTTP API interface, allowing users to
 * **Health Check and Automatic Recovery**: Built-in interface health monitoring with automatic recovery of failed interfaces.
 * **Real-time Monitoring and Statistics**: Offers monitoring of interface status, message statistics, success rates, error logging, and average latency.
 
-### Program Features
+### 🛠️Program Features
 
 * ✅ Automatic Initialization: Automatically configures CAN interfaces on program startup.
 * ✅ Retry Mechanism: Automatically retries interface setup upon failure.
@@ -50,13 +49,13 @@ The project aims to provide an easy-to-use HTTP API interface, allowing users to
 * ✅ Dependency Injection: Facilitates testing and extension.
 * ✅ Error Handling: Comprehensive error handling and logging.
 
-## Installation and Usage
+## 📦Installation and Usage
 
 Supports installation on bare-metal systems, Docker containers, and source code builds.
 
 For detailed installation instructions, see the [Installation Guide](docs/install.md).
 
-### Usage Examples
+### 💡Usage Examples
 
 **Basic Usage**
 
@@ -84,13 +83,13 @@ curl -X POST localhost:5260/api/setup/interfaces/can0 \
   -d '{"bitrate": 500000, "withRetry": true}'
 ```
 
-## API Documentation
+## 🌐API Documentation
 
-### Base Path
+### 📍Base Path
 
 `http://localhost:5260/api`
 
-### New Interface Setup Management API
+### 🔁New Interface Setup Management API
 
 **Configuration Management**:
 
@@ -110,24 +109,24 @@ curl -X POST localhost:5260/api/setup/interfaces/can0 \
 * `POST /api/setup/interfaces/setup-all`
 * `POST /api/setup/interfaces/teardown-all`
 
-## Performance Optimization and Stability
+## 🚀Performance Optimization and Stability
 
 * Implements retry mechanisms for reliable message transmission.
 * Utilizes mutex locks to ensure thread safety.
 * Real-time monitoring of interface health status with automatic recovery.
 
-## Logging and Debugging
+## 📝Logging and Debugging
 
 Logs are output to the standard output stream in a friendly format, including clear error messages and runtime status information.
 
-## Deployment Recommendations
+## 📦Deployment Recommendations
 
 Deployment using systemd or Docker containers is recommended to ensure long-term stable operation.
 
-## Contribution Guide
+## 🤝Contribution Guide
 
 Issues and Pull Requests are welcomed to improve and optimize the project.
 
-## License
+## 📄License
 
 This project is licensed under the Apache-2.0 license.
