@@ -1,7 +1,8 @@
 # CAN-Bridge Project Documentation
-![# CAN Bridge](assets/banner.png)  
 
-[中文](README_zhCN.md)  
+[中文](README_zhCN.md)
+
+![# CAN Bridge](.github/assets/banner.png)
 
 ## 🔧Project Overview
 
