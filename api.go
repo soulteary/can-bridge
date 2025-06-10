@@ -802,42 +802,6 @@ func (h *APIHandler) handleClearAllMessages(c *gin.Context) {
 	h.respondSuccess(c, "All message buffers cleared", data)
 }
 
-// handleGetListenStatus returns listening status for a specific interface
-func (h *APIHandler) handleGetListenStatus(c *gin.Context) {
-	if h.messageListener == nil {
-		h.respondError(c, http.StatusServiceUnavailable, "Message listener not available", nil)
-		return
-	}
-
-	ifName := c.Param("interface")
-	if ifName == "" {
-		h.respondError(c, http.StatusBadRequest, "Interface name is required", nil)
-		return
-	}
-
-	isListening := h.messageListener.IsListening(ifName)
-
-	data := map[string]interface{}{
-		"interface":   ifName,
-		"isListening": isListening,
-		"status": func() string {
-			if isListening {
-				return "listening"
-			}
-			return "not_listening"
-		}(),
-	}
-
-	// Add statistics if listening
-	if isListening {
-		if stats, err := h.messageListener.GetInterfaceStatistics(ifName); err == nil {
-			data["statistics"] = stats
-		}
-	}
-
-	h.respondSuccess(c, "", data)
-}
-
 // handleGetAllListenStatus returns listening status for all interfaces
 func (h *APIHandler) handleGetAllListenStatus(c *gin.Context) {
 	if h.messageListener == nil {
