@@ -2,7 +2,7 @@
 
 [中文](README_zhCN.md)
 
-![# CAN Bridge](.github/assets/banner.png)
+![# CAN Bridge](.github/assets/banner.jpg)
 
 ## 🔧Project Overview
 
