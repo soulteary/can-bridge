@@ -20,6 +20,7 @@ type Service struct {
 	setupManager     *InterfaceSetupManager
 	interfaceManager *InterfaceManager
 	messageSender    *MessageSender
+	messageListener  *CanMessageListener
 	watchdog         *Watchdog
 	monitor          *Monitor
 	apiHandler       *APIHandler
@@ -73,6 +74,12 @@ func (s *Service) Initialize() error {
 		// We continue even if some interfaces failed
 	}
 
+	// Start message listening for all active interfaces
+	if err := s.startMessageListening(); err != nil {
+		s.logger.Printf("Warning: message listening issues: %v", err)
+		// We continue even if some listeners failed to start
+	}
+
 	// Setup HTTP server
 	s.setupHTTPServer()
 
@@ -102,6 +109,10 @@ func (s *Service) initializeComponents() error {
 	// Create message sender
 	s.messageSender = NewMessageSender(s.interfaceManager, s.configProvider, socketProvider, s.logger)
 
+	// Create message listener (new component)
+	maxMessages := 100 // Configure maximum messages per interface
+	s.messageListener = NewCanMessageListener(maxMessages, s.logger)
+
 	// Create watchdog
 	watchdogConfig := DefaultWatchdogConfig()
 	s.watchdog = NewWatchdog(s.interfaceManager, watchdogConfig, s.logger)
@@ -109,8 +120,14 @@ func (s *Service) initializeComponents() error {
 	// Create monitor
 	s.monitor = NewMonitor(s.interfaceManager, s.watchdog, s.configProvider)
 
-	// Create API handler with setup manager
-	s.apiHandler = NewAPIHandlerWithSetup(s.messageSender, s.monitor, s.setupManager, s.logger)
+	// Create API handler with setup manager and message listener
+	s.apiHandler = NewAPIHandlerWithSetupAndListener(
+		s.messageSender,
+		s.monitor,
+		s.setupManager,
+		s.messageListener,
+		s.logger,
+	)
 
 	return nil
 }
@@ -162,6 +179,55 @@ func (s *Service) setupCanInterfaces() error {
 	return nil
 }
 
+// startMessageListening starts message listening for all active interfaces
+func (s *Service) startMessageListening() error {
+	s.logger.Printf("👂 Starting message listening for active interfaces...")
+
+	var listeningErrors []string
+	successCount := 0
+
+	// Get all active interfaces from interface manager
+	activeInterfaces := s.interfaceManager.GetAllInterfaces()
+
+	for ifName := range activeInterfaces {
+		s.logger.Printf("👂 Starting listener for %s...", ifName)
+
+		err := s.messageListener.StartListening(ifName)
+		if err != nil {
+			listeningErrors = append(listeningErrors, fmt.Sprintf("%s: %v", ifName, err))
+			s.logger.Printf("❌ Failed to start listening on %s: %v", ifName, err)
+		} else {
+			successCount++
+			s.logger.Printf("✅ Successfully started listening on %s", ifName)
+		}
+	}
+
+	// Also try to start listening on configured ports that might become active later
+	for _, ifName := range s.config.CanPorts {
+		// Skip if already handled above
+		if _, exists := activeInterfaces[ifName]; exists {
+			continue
+		}
+
+		s.logger.Printf("👂 Attempting to start listener for configured interface %s...", ifName)
+		err := s.messageListener.StartListening(ifName)
+		if err != nil {
+			s.logger.Printf("⚠️ Warning: could not start listening on %s (interface may not be ready): %v", ifName, err)
+		} else {
+			successCount++
+			s.logger.Printf("✅ Successfully started listening on %s", ifName)
+		}
+	}
+
+	s.logger.Printf("🎯 Successfully started listening on %d interfaces", successCount)
+
+	if len(listeningErrors) > 0 {
+		return fmt.Errorf("partial listening startup failure: %v", listeningErrors)
+	}
+
+	return nil
+}
+
 // setupHTTPServer configures the HTTP server
 func (s *Service) setupHTTPServer() {
 	// Set to production mode
@@ -208,12 +274,21 @@ func (s *Service) Start(ctx context.Context) error {
 	}()
 
 	s.logger.Printf("✅ CAN Communication Service started successfully")
+	s.logger.Printf("📡 Message listening active on: %v", s.messageListener.GetListeningInterfaces())
 	return nil
 }
 
 // Stop gracefully stops the service
 func (s *Service) Stop(ctx context.Context) error {
 	s.logger.Printf("🛑 Stopping CAN Communication Service...")
+
+	// Stop message listening first
+	if s.messageListener != nil {
+		s.logger.Printf("🛑 Stopping message listener...")
+		if err := s.messageListener.Shutdown(); err != nil {
+			s.logger.Printf("Warning: failed to stop message listener: %v", err)
+		}
+	}
 
 	// Stop watchdog
 	if err := s.watchdog.Stop(); err != nil {
@@ -283,12 +358,85 @@ func (s *Service) GetStatus() map[string]interface{} {
 		setupStatus["interfaceStates"] = interfaceStates
 	}
 
+	// Add message listener status
+	messageListenerStatus := make(map[string]interface{})
+	if s.messageListener != nil {
+		messageListenerStatus["listeningInterfaces"] = s.messageListener.GetListeningInterfaces()
+		messageListenerStatus["statistics"] = s.messageListener.GetStatistics()
+	}
+
 	return map[string]interface{}{
 		"status":           "running",
 		"uptime":           systemStatus.SystemUptime.String(),
 		"activeInterfaces": systemStatus.ActiveInterfaces,
 		"watchdogRunning":  systemStatus.WatchdogStatus.Running,
 		"setup":            setupStatus,
+		"messageListener":  messageListenerStatus,
+	}
+}
+
+// RestartInterfaceWithListening restarts an interface and its message listening
+func (s *Service) RestartInterfaceWithListening(ifName string) error {
+	s.logger.Printf("🔄 Restarting interface %s with message listening...", ifName)
+
+	// Stop listening first
+	if s.messageListener != nil {
+		if err := s.messageListener.StopListening(ifName); err != nil {
+			s.logger.Printf("⚠️ Warning: failed to stop listening on %s: %v", ifName, err)
+		}
+	}
+
+	// Reset the interface
+	if err := s.setupManager.ResetInterface(ifName); err != nil {
+		return fmt.Errorf("failed to reset interface %s: %w", ifName, err)
+	}
+
+	// Wait a moment for interface to stabilize
+	time.Sleep(1 * time.Second)
+
+	// Restart listening
+	if s.messageListener != nil {
+		if err := s.messageListener.StartListening(ifName); err != nil {
+			s.logger.Printf("⚠️ Warning: failed to restart listening on %s: %v", ifName, err)
+			return fmt.Errorf("interface reset successful but failed to restart listening: %w", err)
+		}
+	}
+
+	s.logger.Printf("✅ Successfully restarted interface %s with message listening", ifName)
+	return nil
+}
+
+// GetMessageSummary returns a summary of message activity
+func (s *Service) GetMessageSummary() map[string]interface{} {
+	if s.messageListener == nil {
+		return map[string]interface{}{
+			"status": "message_listener_not_available",
+		}
+	}
+
+	allStats := s.messageListener.GetStatistics()
+	listeningInterfaces := s.messageListener.GetListeningInterfaces()
+
+	totalReceived := uint64(0)
+	totalBuffered := 0
+
+	for _, stats := range allStats {
+		if statsMap, ok := stats.(map[string]interface{}); ok {
+			if totalRx, ok := statsMap["totalReceived"].(uint64); ok {
+				totalReceived += totalRx
+			}
+			if buffered, ok := statsMap["bufferedCount"].(int); ok {
+				totalBuffered += buffered
+			}
+		}
+	}
+
+	return map[string]interface{}{
+		"listeningInterfaceCount": len(listeningInterfaces),
+		"listeningInterfaces":     listeningInterfaces,
+		"totalMessagesReceived":   totalReceived,
+		"totalMessagesBuffered":   totalBuffered,
+		"interfaceStatistics":     allStats,
 	}
 }
 
@@ -315,6 +463,18 @@ func main() {
 	// Start service
 	if err := service.Start(ctx); err != nil {
 		log.Fatalf("Failed to start service: %v", err)
+	}
+
+	// Print startup summary
+	status := service.GetStatus()
+	log.Printf("🎯 Service startup summary:")
+	log.Printf("   - Active interfaces: %v", status["activeInterfaces"])
+	log.Printf("   - Watchdog running: %v", status["watchdogRunning"])
+
+	if messageListener, ok := status["messageListener"].(map[string]interface{}); ok {
+		if listeningInterfaces, ok := messageListener["listeningInterfaces"].([]string); ok {
+			log.Printf("   - Listening on: %v", listeningInterfaces)
+		}
 	}
 
 	// Wait for interrupt signal for graceful shutdown
