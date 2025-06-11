@@ -3,35 +3,50 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
 
 // APIHandler handles HTTP API requests
 type APIHandler struct {
-	messageSender *MessageSender
-	monitor       *Monitor
-	setupManager  *InterfaceSetupManager
-	logger        Logger
+	messageSender   *MessageSender
+	monitor         *Monitor
+	setupManager    *InterfaceSetupManager
+	messageListener *CanMessageListener
+	logger          Logger
 }
 
 // NewAPIHandler creates a new API handler (legacy, without setup manager)
 func NewAPIHandler(messageSender *MessageSender, monitor *Monitor, logger Logger) *APIHandler {
 	return &APIHandler{
-		messageSender: messageSender,
-		monitor:       monitor,
-		setupManager:  nil,
-		logger:        logger,
+		messageSender:   messageSender,
+		monitor:         monitor,
+		setupManager:    nil,
+		messageListener: nil,
+		logger:          logger,
 	}
 }
 
 // NewAPIHandlerWithSetup creates a new API handler with setup manager
 func NewAPIHandlerWithSetup(messageSender *MessageSender, monitor *Monitor, setupManager *InterfaceSetupManager, logger Logger) *APIHandler {
 	return &APIHandler{
-		messageSender: messageSender,
-		monitor:       monitor,
-		setupManager:  setupManager,
-		logger:        logger,
+		messageSender:   messageSender,
+		monitor:         monitor,
+		setupManager:    setupManager,
+		messageListener: nil,
+		logger:          logger,
+	}
+}
+
+// NewAPIHandlerWithSetupAndListener creates a new API handler with setup manager and message listener
+func NewAPIHandlerWithSetupAndListener(messageSender *MessageSender, monitor *Monitor, setupManager *InterfaceSetupManager, messageListener *CanMessageListener, logger Logger) *APIHandler {
+	return &APIHandler{
+		messageSender:   messageSender,
+		monitor:         monitor,
+		setupManager:    setupManager,
+		messageListener: messageListener,
+		logger:          logger,
 	}
 }
 
@@ -65,6 +80,29 @@ func (h *APIHandler) SetupRoutes(r *gin.Engine) {
 				setup.GET("/interfaces/:name/state", h.handleGetInterfaceState)
 				setup.POST("/interfaces/setup-all", h.handleSetupAllInterfaces)
 				setup.POST("/interfaces/teardown-all", h.handleTeardownAllInterfaces)
+			}
+		}
+
+		// Message listening endpoints (new)
+		if h.messageListener != nil {
+			messages := api.Group("/messages")
+			{
+				// Get messages from specific interface
+				messages.GET("/:interface", h.handleGetMessages)
+				messages.GET("/:interface/recent", h.handleGetRecentMessages)
+				messages.GET("/:interface/statistics", h.handleGetMessageStatistics)
+				messages.DELETE("/:interface", h.handleClearMessages)
+
+				// Global message operations
+				messages.GET("/", h.handleGetAllMessages)
+				messages.GET("/statistics", h.handleGetAllMessageStatistics)
+				messages.DELETE("/", h.handleClearAllMessages)
+
+				// Listener control
+				messages.POST("/:interface/listen/start", h.handleStartListening)
+				messages.POST("/:interface/listen/stop", h.handleStopListening)
+				messages.GET("/:interface/listen/status", h.handleGetListenStatus)
+				messages.GET("/listen/status", h.handleGetAllListenStatus)
 			}
 		}
 	}
@@ -123,6 +161,11 @@ func (h *APIHandler) handleInterfacesList(c *gin.Context) {
 		"activeCount":     status.ActiveInterfaces,
 	}
 
+	// Add listening status if message listener is available
+	if h.messageListener != nil {
+		data["listeningInterfaces"] = h.messageListener.GetListeningInterfaces()
+	}
+
 	h.respondSuccess(c, "", data)
 }
 
@@ -140,7 +183,22 @@ func (h *APIHandler) handleInterfaceStatus(c *gin.Context) {
 		return
 	}
 
-	h.respondSuccess(c, "", status)
+	// Add listening status if message listener is available
+	if h.messageListener != nil {
+		statusMap := map[string]interface{}{
+			"interfaceStatus": status,
+			"isListening":     h.messageListener.IsListening(ifName),
+		}
+
+		// Add message statistics if available
+		if stats, err := h.messageListener.GetInterfaceStatistics(ifName); err == nil {
+			statusMap["messageStatistics"] = stats
+		}
+
+		h.respondSuccess(c, "", statusMap)
+	} else {
+		h.respondSuccess(c, "", status)
+	}
 }
 
 // handleHealthSummary returns system health summary
@@ -176,13 +234,20 @@ func (h *APIHandler) handleMetrics(c *gin.Context) {
 			"health_checks_passed": ifStatus.Health.ChecksPassed,
 			"health_checks_failed": ifStatus.Health.ChecksFailed,
 		}
+
+		// Add message listening metrics if available
+		if h.messageListener != nil {
+			if stats, err := h.messageListener.GetInterfaceStatistics(name); err == nil {
+				interfaceMetrics[name].(map[string]interface{})["message_listening"] = stats
+			}
+		}
 	}
 	metrics["interfaces"] = interfaceMetrics
 
 	h.respondSuccess(c, "", metrics)
 }
 
-// ====== Interface Setup Handlers (New) ======
+// ====== Interface Setup Handlers (Existing) ======
 
 // handleGetSetupConfig returns current setup configuration
 func (h *APIHandler) handleGetSetupConfig(c *gin.Context) {
@@ -331,6 +396,13 @@ func (h *APIHandler) handleSetupInterface(c *gin.Context) {
 		return
 	}
 
+	// Start listening if message listener is available
+	if h.messageListener != nil {
+		if err := h.messageListener.StartListening(ifName); err != nil {
+			h.logger.Printf("Warning: failed to start listening on %s: %v", ifName, err)
+		}
+	}
+
 	// Get interface state
 	state, err := h.setupManager.GetInterfaceState(ifName)
 	if err != nil {
@@ -352,6 +424,13 @@ func (h *APIHandler) handleTeardownInterface(c *gin.Context) {
 	if ifName == "" {
 		h.respondError(c, http.StatusBadRequest, "Interface name is required", nil)
 		return
+	}
+
+	// Stop listening if message listener is available
+	if h.messageListener != nil {
+		if err := h.messageListener.StopListening(ifName); err != nil {
+			h.logger.Printf("Warning: failed to stop listening on %s: %v", ifName, err)
+		}
 	}
 
 	if err := h.setupManager.TeardownInterface(ifName); err != nil {
@@ -466,6 +545,13 @@ func (h *APIHandler) handleSetupAllInterfaces(c *gin.Context) {
 				"error":   err.Error(),
 			}
 		} else {
+			// Start listening if message listener is available
+			if h.messageListener != nil {
+				if err := h.messageListener.StartListening(ifName); err != nil {
+					h.logger.Printf("Warning: failed to start listening on %s: %v", ifName, err)
+				}
+			}
+
 			// Get interface state
 			if state, err := h.setupManager.GetInterfaceState(ifName); err == nil {
 				results[ifName] = map[string]interface{}{
@@ -511,6 +597,13 @@ func (h *APIHandler) handleTeardownAllInterfaces(c *gin.Context) {
 	var teardownErrors []string
 
 	for _, ifName := range interfaces {
+		// Stop listening if message listener is available
+		if h.messageListener != nil {
+			if err := h.messageListener.StopListening(ifName); err != nil {
+				h.logger.Printf("Warning: failed to stop listening on %s: %v", ifName, err)
+			}
+		}
+
 		if err := h.setupManager.TeardownInterface(ifName); err != nil {
 			teardownErrors = append(teardownErrors, fmt.Sprintf("%s: %v", ifName, err))
 			results[ifName] = map[string]interface{}{
@@ -538,6 +631,194 @@ func (h *APIHandler) handleTeardownAllInterfaces(c *gin.Context) {
 	} else {
 		h.respondSuccess(c, "All interfaces torn down successfully", responseData)
 	}
+}
+
+// ====== Message Listening Handlers (New) ======
+
+// handleGetMessages returns all messages for a specific interface
+func (h *APIHandler) handleGetMessages(c *gin.Context) {
+	if h.messageListener == nil {
+		h.respondError(c, http.StatusServiceUnavailable, "Message listener not available", nil)
+		return
+	}
+
+	ifName := c.Param("interface")
+	if ifName == "" {
+		h.respondError(c, http.StatusBadRequest, "Interface name is required", nil)
+		return
+	}
+
+	messages, err := h.messageListener.GetMessages(ifName)
+	if err != nil {
+		h.respondError(c, http.StatusNotFound, "Failed to get messages", err)
+		return
+	}
+
+	data := map[string]interface{}{
+		"interface":   ifName,
+		"messages":    messages,
+		"count":       len(messages),
+		"isListening": h.messageListener.IsListening(ifName),
+	}
+
+	h.respondSuccess(c, "", data)
+}
+
+// handleGetRecentMessages returns recent messages for a specific interface
+func (h *APIHandler) handleGetRecentMessages(c *gin.Context) {
+	if h.messageListener == nil {
+		h.respondError(c, http.StatusServiceUnavailable, "Message listener not available", nil)
+		return
+	}
+
+	ifName := c.Param("interface")
+	if ifName == "" {
+		h.respondError(c, http.StatusBadRequest, "Interface name is required", nil)
+		return
+	}
+
+	// Get count parameter (default: 10)
+	countStr := c.DefaultQuery("count", "10")
+	count, err := strconv.Atoi(countStr)
+	if err != nil || count <= 0 {
+		count = 10
+	}
+
+	messages, err := h.messageListener.GetRecentMessages(ifName, count)
+	if err != nil {
+		h.respondError(c, http.StatusNotFound, "Failed to get recent messages", err)
+		return
+	}
+
+	data := map[string]interface{}{
+		"interface":      ifName,
+		"messages":       messages,
+		"requestedCount": count,
+		"actualCount":    len(messages),
+		"isListening":    h.messageListener.IsListening(ifName),
+	}
+
+	h.respondSuccess(c, "", data)
+}
+
+// handleGetMessageStatistics returns message statistics for a specific interface
+func (h *APIHandler) handleGetMessageStatistics(c *gin.Context) {
+	if h.messageListener == nil {
+		h.respondError(c, http.StatusServiceUnavailable, "Message listener not available", nil)
+		return
+	}
+
+	ifName := c.Param("interface")
+	if ifName == "" {
+		h.respondError(c, http.StatusBadRequest, "Interface name is required", nil)
+		return
+	}
+
+	stats, err := h.messageListener.GetInterfaceStatistics(ifName)
+	if err != nil {
+		h.respondError(c, http.StatusNotFound, "Failed to get message statistics", err)
+		return
+	}
+
+	stats["isListening"] = h.messageListener.IsListening(ifName)
+
+	h.respondSuccess(c, "", stats)
+}
+
+// handleClearMessages clears message buffer for a specific interface
+func (h *APIHandler) handleClearMessages(c *gin.Context) {
+	if h.messageListener == nil {
+		h.respondError(c, http.StatusServiceUnavailable, "Message listener not available", nil)
+		return
+	}
+
+	ifName := c.Param("interface")
+	if ifName == "" {
+		h.respondError(c, http.StatusBadRequest, "Interface name is required", nil)
+		return
+	}
+
+	if err := h.messageListener.ClearMessages(ifName); err != nil {
+		h.respondError(c, http.StatusNotFound, "Failed to clear messages", err)
+		return
+	}
+
+	data := map[string]interface{}{
+		"interface": ifName,
+		"status":    "cleared",
+	}
+
+	h.respondSuccess(c, fmt.Sprintf("Message buffer cleared for %s", ifName), data)
+}
+
+// handleGetAllMessages returns messages for all interfaces
+func (h *APIHandler) handleGetAllMessages(c *gin.Context) {
+	if h.messageListener == nil {
+		h.respondError(c, http.StatusServiceUnavailable, "Message listener not available", nil)
+		return
+	}
+
+	allMessages := h.messageListener.GetAllMessages()
+
+	data := map[string]interface{}{
+		"interfaces":          allMessages,
+		"interfaceCount":      len(allMessages),
+		"listeningInterfaces": h.messageListener.GetListeningInterfaces(),
+	}
+
+	h.respondSuccess(c, "", data)
+}
+
+// handleGetAllMessageStatistics returns message statistics for all interfaces
+func (h *APIHandler) handleGetAllMessageStatistics(c *gin.Context) {
+	if h.messageListener == nil {
+		h.respondError(c, http.StatusServiceUnavailable, "Message listener not available", nil)
+		return
+	}
+
+	stats := h.messageListener.GetStatistics()
+
+	data := map[string]interface{}{
+		"statistics":          stats,
+		"listeningInterfaces": h.messageListener.GetListeningInterfaces(),
+	}
+
+	h.respondSuccess(c, "", data)
+}
+
+// handleClearAllMessages clears message buffers for all interfaces
+func (h *APIHandler) handleClearAllMessages(c *gin.Context) {
+	if h.messageListener == nil {
+		h.respondError(c, http.StatusServiceUnavailable, "Message listener not available", nil)
+		return
+	}
+
+	h.messageListener.ClearAllMessages()
+
+	data := map[string]interface{}{
+		"status": "all_cleared",
+	}
+
+	h.respondSuccess(c, "All message buffers cleared", data)
+}
+
+// handleGetAllListenStatus returns listening status for all interfaces
+func (h *APIHandler) handleGetAllListenStatus(c *gin.Context) {
+	if h.messageListener == nil {
+		h.respondError(c, http.StatusServiceUnavailable, "Message listener not available", nil)
+		return
+	}
+
+	listeningInterfaces := h.messageListener.GetListeningInterfaces()
+	allStats := h.messageListener.GetStatistics()
+
+	data := map[string]interface{}{
+		"listeningInterfaces": listeningInterfaces,
+		"listeningCount":      len(listeningInterfaces),
+		"allStatistics":       allStats,
+	}
+
+	h.respondSuccess(c, "", data)
 }
 
 // ====== Helper methods for consistent response formatting ======
@@ -626,4 +907,94 @@ func RecoveryMiddleware(logger Logger) gin.HandlerFunc {
 			Error:  "Internal server error",
 		})
 	})
+}
+
+// handleStopListening stops message listening on a specific interface
+func (h *APIHandler) handleStopListening(c *gin.Context) {
+	if h.messageListener == nil {
+		h.respondError(c, http.StatusServiceUnavailable, "Message listener not available", nil)
+		return
+	}
+
+	ifName := c.Param("interface")
+	if ifName == "" {
+		h.respondError(c, http.StatusBadRequest, "Interface name is required", nil)
+		return
+	}
+
+	if err := h.messageListener.StopListening(ifName); err != nil {
+		h.respondError(c, http.StatusInternalServerError, "Failed to stop listening", err)
+		return
+	}
+
+	data := map[string]interface{}{
+		"interface":   ifName,
+		"status":      "stopped",
+		"isListening": false,
+	}
+
+	h.respondSuccess(c, fmt.Sprintf("Stopped listening on %s", ifName), data)
+}
+
+// handleGetListenStatus returns listening status for a specific interface
+func (h *APIHandler) handleGetListenStatus(c *gin.Context) {
+	if h.messageListener == nil {
+		h.respondError(c, http.StatusServiceUnavailable, "Message listener not available", nil)
+		return
+	}
+
+	ifName := c.Param("interface")
+	if ifName == "" {
+		h.respondError(c, http.StatusBadRequest, "Interface name is required", nil)
+		return
+	}
+
+	isListening := h.messageListener.IsListening(ifName)
+
+	data := map[string]interface{}{
+		"interface":   ifName,
+		"isListening": isListening,
+		"status": func() string {
+			if isListening {
+				return "listening"
+			}
+			return "not_listening"
+		}(),
+	}
+
+	// Add statistics if listening
+	if isListening {
+		if stats, err := h.messageListener.GetInterfaceStatistics(ifName); err == nil {
+			data["statistics"] = stats
+		}
+	}
+
+	h.respondSuccess(c, "", data)
+}
+
+// handleStartListening starts message listening on a specific interface
+func (h *APIHandler) handleStartListening(c *gin.Context) {
+	if h.messageListener == nil {
+		h.respondError(c, http.StatusServiceUnavailable, "Message listener not available", nil)
+		return
+	}
+
+	ifName := c.Param("interface")
+	if ifName == "" {
+		h.respondError(c, http.StatusBadRequest, "Interface name is required", nil)
+		return
+	}
+
+	if err := h.messageListener.StartListening(ifName); err != nil {
+		h.respondError(c, http.StatusInternalServerError, "Failed to start listening", err)
+		return
+	}
+
+	data := map[string]interface{}{
+		"interface":   ifName,
+		"status":      "listening",
+		"isListening": true,
+	}
+
+	h.respondSuccess(c, fmt.Sprintf("Started listening on %s", ifName), data)
 }
