@@ -263,7 +263,9 @@ func (s *Service) Start(ctx context.Context) error {
 	}
 
 	// Start Node Finder in a separate goroutine
-	go NodeFinder()
+	if s.config.EnableFinder {
+		go NodeFinder(s.config.SetupFinderInterval)
+	}
 
 	// Start HTTP server in a goroutine
 	go func() {

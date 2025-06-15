@@ -17,7 +17,7 @@ type DeviceInfo struct {
 	Version string `json:"version"`
 }
 
-func NodeFinder() {
+func NodeFinder(interval time.Duration) {
 	broadcastAddr := "255.255.255.255:9999"
 
 	conn, err := net.DialUDP("udp4", nil, resolveUDPAddr(broadcastAddr))
@@ -49,7 +49,7 @@ func NodeFinder() {
 			log.Printf("📡 Broadcast successful: %s", string(data))
 		}
 
-		time.Sleep(5 * time.Second)
+		time.Sleep(interval * time.Second)
 	}
 }
 
