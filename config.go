@@ -11,14 +11,16 @@ import (
 
 // Configuration structure
 type Config struct {
-	CanPorts    []string
-	Port        string
-	AutoSetup   bool          // Auto setup CAN interfaces on startup
-	Bitrate     int           // Default bitrate for CAN interfaces
-	SamplePoint string        // Default sample point
-	RestartMs   int           // Default restart timeout
-	SetupRetry  int           // Number of setup retry attempts
-	SetupDelay  time.Duration // Delay between setup retries
+	CanPorts            []string
+	Port                string
+	AutoSetup           bool          // Auto setup CAN interfaces on startup
+	Bitrate             int           // Default bitrate for CAN interfaces
+	SamplePoint         string        // Default sample point
+	RestartMs           int           // Default restart timeout
+	SetupRetry          int           // Number of setup retry attempts
+	SetupDelay          time.Duration // Delay between setup retries
+	EnableFinder        bool          // Enable service finder
+	SetupFinderInterval time.Duration // Interval for service finder
 }
 
 // ConfigProvider interface for dependency injection
@@ -115,6 +117,8 @@ func (cp *ConfigParser) ParseConfig() (*Config, error) {
 	var restartMs int
 	var setupRetry int
 	var setupDelaySeconds int
+	var setupFinderEnabled bool
+	var setupFinderInterval int
 
 	flag.StringVar(&canPortsFlag, "can-ports", "", "Comma-separated list of CAN interfaces (e.g., can0,can1)")
 	flag.StringVar(&serverPort, "port", "5260", "HTTP server port")
@@ -124,6 +128,8 @@ func (cp *ConfigParser) ParseConfig() (*Config, error) {
 	flag.IntVar(&restartMs, "restart-ms", 100, "Default CAN restart timeout (ms)")
 	flag.IntVar(&setupRetry, "setup-retry", 3, "Number of setup retry attempts")
 	flag.IntVar(&setupDelaySeconds, "setup-delay", 2, "Delay between setup retries (seconds)")
+	flag.BoolVar(&setupFinderEnabled, "enable-finder", true, "Enable service finder")
+	flag.IntVar(&setupFinderInterval, "finder-interval", 5, "Interval for service finder in seconds")
 	flag.Parse()
 
 	// Environment variables (override command line)
@@ -174,6 +180,13 @@ func (cp *ConfigParser) ParseConfig() (*Config, error) {
 	if serverPort == "" {
 		return nil, fmt.Errorf("server port cannot be empty")
 	}
+
+	if setupFinderEnabled {
+		if setupFinderInterval <= 0 {
+			return nil, fmt.Errorf("finder interval must be positive, got %d", config.SetupFinderInterval)
+		}
+	}
+
 	config.Port = serverPort
 	config.AutoSetup = autoSetup
 	config.Bitrate = bitrate
@@ -181,6 +194,8 @@ func (cp *ConfigParser) ParseConfig() (*Config, error) {
 	config.RestartMs = restartMs
 	config.SetupRetry = setupRetry
 	config.SetupDelay = time.Duration(setupDelaySeconds) * time.Second
+	config.EnableFinder = setupFinderEnabled
+	config.SetupFinderInterval = time.Duration(setupFinderInterval) * time.Second
 
 	return config, nil
 }
