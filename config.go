@@ -21,6 +21,7 @@ type Config struct {
 	SetupDelay          time.Duration // Delay between setup retries
 	EnableFinder        bool          // Enable service finder
 	SetupFinderInterval time.Duration // Interval for service finder
+	EnableHealthCheck   bool          // Enable health check endpoint
 }
 
 // ConfigProvider interface for dependency injection
@@ -96,6 +97,18 @@ func (p *DefaultConfigProvider) GetSetupDelay() time.Duration {
 	return p.config.SetupDelay
 }
 
+func (p *DefaultConfigProvider) GetEnableFinder() bool {
+	return p.config.EnableFinder
+}
+
+func (p *DefaultConfigProvider) GetSetupFinderInterval() time.Duration {
+	return p.config.SetupFinderInterval
+}
+
+func (p *DefaultConfigProvider) GetEnableHealthCheck() bool {
+	return p.config.EnableHealthCheck
+}
+
 // ConfigParser handles parsing configuration from various sources
 type ConfigParser struct{}
 
@@ -119,6 +132,7 @@ func (cp *ConfigParser) ParseConfig() (*Config, error) {
 	var setupDelaySeconds int
 	var setupFinderEnabled bool
 	var setupFinderInterval int
+	var setupHealthCheck bool
 
 	flag.StringVar(&canPortsFlag, "can-ports", "", "Comma-separated list of CAN interfaces (e.g., can0,can1)")
 	flag.StringVar(&serverPort, "port", "5260", "HTTP server port")
@@ -130,6 +144,7 @@ func (cp *ConfigParser) ParseConfig() (*Config, error) {
 	flag.IntVar(&setupDelaySeconds, "setup-delay", 2, "Delay between setup retries (seconds)")
 	flag.BoolVar(&setupFinderEnabled, "enable-finder", true, "Enable service finder")
 	flag.IntVar(&setupFinderInterval, "finder-interval", 5, "Interval for service finder in seconds")
+	flag.BoolVar(&setupHealthCheck, "enable-healthcheck", true, "Enable health check endpoint")
 	flag.Parse()
 
 	// Environment variables (override command line)
@@ -185,6 +200,12 @@ func (cp *ConfigParser) ParseConfig() (*Config, error) {
 		if setupFinderInterval <= 0 {
 			return nil, fmt.Errorf("finder interval must be positive, got %d", config.SetupFinderInterval)
 		}
+	}
+
+	if setupHealthCheck {
+		config.EnableHealthCheck = true
+	} else {
+		config.EnableHealthCheck = false
 	}
 
 	config.Port = serverPort

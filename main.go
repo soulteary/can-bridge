@@ -258,8 +258,10 @@ func (s *Service) setupHTTPServer() {
 // Start starts the service
 func (s *Service) Start(ctx context.Context) error {
 	// Start watchdog
-	if err := s.watchdog.Start(ctx); err != nil {
-		return fmt.Errorf("failed to start watchdog: %w", err)
+	if s.config.EnableHealthCheck {
+		if err := s.watchdog.Start(ctx); err != nil {
+			return fmt.Errorf("failed to start watchdog: %w", err)
+		}
 	}
 
 	// Start Node Finder in a separate goroutine
