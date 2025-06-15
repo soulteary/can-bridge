@@ -654,6 +654,17 @@ func (h *APIHandler) handleGetMessages(c *gin.Context) {
 		return
 	}
 
+	id := c.Query("id")
+	if id != "" {
+		var filteredMessages []CanMessageLog
+		for _, msg := range messages {
+			if msg.HEX_ID == id {
+				filteredMessages = append(filteredMessages, msg)
+			}
+		}
+		messages = filteredMessages
+	}
+
 	data := map[string]interface{}{
 		"interface":   ifName,
 		"messages":    messages,
