@@ -18,6 +18,9 @@ type CanMessageLog struct {
 	Length    uint8     `json:"length"`
 	Timestamp time.Time `json:"timestamp"`
 	Direction string    `json:"direction"` // "RX" for received messages
+
+	HEX_ID   string   `json:"hex_id"`   // Hexadecimal representation of ID
+	HEX_Data []string `json:"hex_data"` // Hexadecimal representation of data
 }
 
 // InterfaceMessageBuffer manages message history for a single interface
@@ -238,6 +241,14 @@ func (cml *CanMessageListener) StopListening(interfaceName string) error {
 	return nil
 }
 
+func bytesToHexArray(data []byte) []string {
+	hexArray := make([]string, len(data))
+	for i, b := range data {
+		hexArray[i] = fmt.Sprintf("%02X", b)
+	}
+	return hexArray
+}
+
 // listenOnInterface performs the actual message listening for an interface
 func (cml *CanMessageListener) listenOnInterface(listener *interfaceListener) {
 	listener.isRunning = true
@@ -290,6 +301,9 @@ func (cml *CanMessageListener) listenOnInterface(listener *interfaceListener) {
 					Length:    frame.Length,
 					Timestamp: time.Now(),
 					Direction: "RX",
+
+					HEX_ID:   fmt.Sprintf("%08x", frame.ID),
+					HEX_Data: bytesToHexArray(data),
 				}
 
 				// Add to buffer
