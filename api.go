@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -635,6 +636,31 @@ func (h *APIHandler) handleTeardownAllInterfaces(c *gin.Context) {
 
 // ====== Message Listening Handlers (New) ======
 
+// 判断用户传入的 hex string 是否匹配数据中的 id
+func MatchID(userHex string, id uint32) bool {
+	var parsedID uint64
+	var err error
+
+	// 如果用户传入的 hex 字符串以 "0x" 开头，先去掉前缀并转换为小写
+	if strings.HasPrefix(userHex, "0x") {
+		userHex = strings.TrimPrefix(strings.ToLower(userHex), "0x")
+		parsedID, err = strconv.ParseUint(userHex, 16, 32)
+		if err != nil {
+			fmt.Println("❌ 无法解析 hex 参数:", err)
+			return false
+		}
+
+	} else {
+		// 如果没有 "0x" 前缀，直接尝试解析为十进制
+		parsedID, err = strconv.ParseUint(userHex, 10, 32)
+		if err != nil {
+			fmt.Println("❌ 无法解析十进制参数:", err)
+			return false
+		}
+	}
+	return uint32(parsedID) == id
+}
+
 // handleGetMessages returns all messages for a specific interface
 func (h *APIHandler) handleGetMessages(c *gin.Context) {
 	if h.messageListener == nil {
@@ -654,11 +680,11 @@ func (h *APIHandler) handleGetMessages(c *gin.Context) {
 		return
 	}
 
-	id := c.Query("id")
-	if id != "" {
+	userId := c.Query("id")
+	if userId != "" {
 		var filteredMessages []CanMessageLog
 		for _, msg := range messages {
-			if msg.HEX_ID == id {
+			if MatchID(userId, msg.ID) {
 				filteredMessages = append(filteredMessages, msg)
 			}
 		}
