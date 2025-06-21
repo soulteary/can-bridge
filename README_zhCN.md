@@ -64,16 +64,58 @@
 ./can-bridge -can-ports can0,can1
 ```
 
+**设置端口**
+
+```bash
+./can-bridge -port 5260
+```
+
+**禁用自动设置（通过 API 手动管理）**
+
+```bash
+./can-bridge -auto-setup=false
+```
+
 **自定义比特率**
 
 ```bash
 ./can-bridge -can-ports can0 -bitrate 500000
 ```
 
-**禁用自动设置（通过API手动管理）**
+**采样点**
 
 ```bash
-./can-bridge -auto-setup=false
+./can-bridge -sample-point 0.875
+```
+
+**重启超时**
+
+```bash
+./can-bridge -restart-ms 100
+```
+
+**重试次数**
+
+```bash
+./can-bridge -setup-retry 3
+```
+
+**启用服务发现**
+
+```bash
+./can-bridge -enable-finder=true
+```
+
+**服务发现间隔**
+
+```bash
+./can-bridge -finder-interval 5
+```
+
+**启用健康检查**
+
+```bash
+./can-bridge -enable-healthcheck=true
 ```
 
 **通过 API 设置接口**

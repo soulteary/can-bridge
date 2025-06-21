@@ -64,16 +64,64 @@ For detailed installation instructions, see the [Installation Guide](docs/instal
 ./can-bridge -can-ports can0,can1
 ```
 
-**Custom Bitrate**
+**Set Port**
 
 ```bash
-./can-bridge -can-ports can0 -bitrate 500000
+./can-bridge -port 5260
 ```
 
 **Disable Automatic Setup (Managed via API)**
 
 ```bash
 ./can-bridge -auto-setup=false
+```
+
+**Custom Bitrate**
+
+```bash
+./can-bridge -can-ports can0 -bitrate 500000
+```
+
+**Sample Point**
+
+```bash
+./can-bridge -sample-point 0.75
+```
+
+**Restart Timeout**
+
+```bash
+./can-bridge -restart-ms 100
+```
+
+**Setup Retry**
+
+```bash
+./can-bridge -setup-retry 3
+```
+
+**Setup Delay**
+
+```bash
+./can-bridge -setup-delay 2
+```
+
+**Enable Service Finder**
+
+```bash
+./can-bridge -enable-finder=true
+```
+
+**Service Finder Interval**
+
+```bash
+./can-bridge -finder-interval 5
+```
+
+**Enable Health Check**
+
+```bash
+./can-bridge -enable-healthcheck=true
 ```
 
 **Configure Interface via API**
